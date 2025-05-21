@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Oven Temperature Heat Map</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a; /* Dark background */
+        }
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        .panel {
+            position: absolute;
+            background: rgba(20, 20, 20, 0.85); /* Darker, slightly more opaque */
+            color: #f0f0f0; /* Light gray text */
+            padding: 15px;
+            border-radius: 8px; /* Softer radius */
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4); /* Subtle shadow */
+            font-size: 0.875rem; /* Slightly smaller base font for panels */
+        }
+        #info {
+            top: 20px;
+            left: 20px;
+            max-width: 320px; /* Slightly wider */
+        }
+        #controls {
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px; /* Reduced gap */
+            align-items: center;
+            padding: 12px 15px; /* Adjusted padding */
+        }
+        #legend {
+            top: 20px;
+            right: 20px;
+        }
+        .legend-gradient {
+            height: 150px; 
+            width: 25px;  
+            background: linear-gradient(to top, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000);
+            margin: 5px auto;
+            border: 1px solid #444; /* Darker border */
+        }
+        .legend-labels {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 150px; 
+            font-size: 0.75rem; /* Smaller legend labels */
+            margin-left: 8px;
+        }
+        #legend .content {
+            display: flex;
+            align-items: center;
+        }
+        button, #loadDataLabel {
+            background-color: #3b82f6; /* Blue-500 */
+            border: none;
+            color: white !important;
+            padding: 8px 12px; 
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 0.875rem; 
+            margin: 2px 1px; 
+            cursor: pointer;
+            border-radius: 6px; /* Consistent radius */
+            transition: background-color 0.2s ease-in-out;
+        }
+        button:hover, #loadDataLabel:hover {
+            background-color: #2563eb; /* Blue-600 */
+        }
+        #playPause.playing {
+             background-color: #ef4444; /* Red-500 for pause button when playing */
+        }
+        #playPause.playing:hover {
+             background-color: #dc2626; /* Red-600 */
+        }
+        input[type="range"] {
+            width: 180px; 
+            vertical-align: middle;
+            cursor: pointer;
+        }
+        .time-display {
+            font-size: 0.9rem; 
+            font-weight: 600; /* Semi-bold */
+            min-width: 60px; 
+            text-align: center;
+            background-color: rgba(0,0,0,0.3);
+            padding: 4px 6px;
+            border-radius: 4px;
+        }
+        .panel h2 {
+            font-size: 1.125rem; /* text-lg */
+            font-weight: 700; /* bold */
+            margin-bottom: 0.5rem; /* mb-2 */
+            color: #60a5fa; /* Lighter blue for headings */
+        }
+         .panel h3 {
+            font-size: 1rem; /* text-base */
+            font-weight: 600; /* semibold */
+            margin-bottom: 0.25rem; /* mb-1 */
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="info" class="panel">
+            <h2>Oven Temperature Sim</h2>
+            <p>3D heat map of temperature distribution inside a 14-inch cubic oven.</p>
+            <p class="mt-1">Sensors: 15 (5×3 grid on central plane).</p>
+            <p id="dataLoadStatus" class="mt-2 text-amber-400">Using sample data. Load your CSV for full simulation.</p>
+            <p id="dataTimeInterval" class="mt-1">Time interval: N/A</p>
+            <p id="dataDuration" class="mt-1">Total duration: N/A</p>
+            <p id="ovenMonDisplay" class="mt-2">Oven Monitor (Oven_Mon): N/A</p>
+            <p id="rt1Display" class="mt-1">Room Temp 1 (RT1): N/A</p>
+            <p id="rt2Display" class="mt-1">Room Temp 2 (RT2): N/A</p>
+        </div>
+        
+        <div id="legend" class="panel">
+            <h3>Temp (°C)</h3>
+            <div class="content">
+                <div class="legend-gradient"></div>
+                <div class="legend-labels">
+                    <span>135°</span>
+                    <span></span> 
+                    <span>77.5°</span>
+                    <span></span> 
+                    <span>20°</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="controls" class="panel">
+            <input type="file" id="csvInput" accept=".csv" style="display: none;">
+            <label for="csvInput" id="loadDataLabel" title="Load custom CSV data">📂 Load</label>
+            <button id="playPause" title="Play/Pause">▶️ Play</button>
+            <button id="restart" title="Restart animation">↻</button>
+            <input type="range" id="timeSlider" min="0" max="0" value="0" title="Time scrub">
+            <span id="currentTime" class="time-display">00:00</span>
+            <button id="speedDown" title="Decrease speed">-</button>
+            <span id="speedDisplay" class="time-display">1.0×</span>
+            <button id="speedUp" title="Increase speed">+</button>
+        </div>
+    </div>
+
+    <script>
+        let temperatureData = [];
+        const OVEN_SIZE = 14; // inches, but used as abstract units in Three.js
+        const TEMP_MIN = 20;
+        const TEMP_MAX = 135; // Max temp for color scale, data can exceed this
+
+        // --- Sensor Positions Configuration ( crucial for correct layout ) ---
+        // Origin (0,0,0) is the center of the oven.
+        // Y-axis is vertical (bottom to top).
+        // Z-axis is depth (positive Z = front/door, negative Z = back).
+        // X-axis is width (positive X = right, negative X = left, looking from front).
+        const layer_y_offset = OVEN_SIZE / 3.2; // How far top/bottom layers are from center Y=0
+        const xy_plane_offset = OVEN_SIZE / 3.2; // How far corner sensors are from center X=0 or Z=0
+
+        const SENSORS_POSITIONS_CONFIG = [
+            // Sensor Index (0-14) maps to CSV Column (1-15)
+            // Layer 1 (Bottom, Y = -layer_y_offset)
+            { x: -xy_plane_offset, y: -layer_y_offset, z:  xy_plane_offset }, // Sensor 1 (Front-Left)
+            { x: -xy_plane_offset, y: -layer_y_offset, z: -xy_plane_offset }, // Sensor 2 (Back-Left)
+            { x:  xy_plane_offset, y: -layer_y_offset, z: -xy_plane_offset }, // Sensor 3 (Back-Right)
+            { x:  xy_plane_offset, y: -layer_y_offset, z:  xy_plane_offset }, // Sensor 4 (Front-Right)
+            { x:  0,               y: -layer_y_offset, z:  0               }, // Sensor 5 (Center)
+
+            // Layer 2 (Middle, Y = 0)
+            { x: -xy_plane_offset, y:  0,               z:  xy_plane_offset }, // Sensor 6 (Front-Left)
+            { x: -xy_plane_offset, y:  0,               z: -xy_plane_offset }, // Sensor 7 (Back-Left)
+            { x:  xy_plane_offset, y:  0,               z: -xy_plane_offset }, // Sensor 8 (Back-Right)
+            { x:  xy_plane_offset, y:  0,               z:  xy_plane_offset }, // Sensor 9 (Front-Right)
+            { x:  0,               y:  0,               z:  0               }, // Sensor 10 (Center)
+
+            // Layer 3 (Top, Y = layer_y_offset)
+            { x: -xy_plane_offset, y:  layer_y_offset, z:  xy_plane_offset }, // Sensor 11 (Front-Left)
+            { x: -xy_plane_offset, y:  layer_y_offset, z: -xy_plane_offset }, // Sensor 12 (Back-Left)
+            { x:  xy_plane_offset, y:  layer_y_offset, z: -xy_plane_offset }, // Sensor 13 (Back-Right)
+            { x:  xy_plane_offset, y:  layer_y_offset, z:  xy_plane_offset }, // Sensor 14 (Front-Right)
+            { x:  0,               y:  layer_y_offset, z:  0               }  // Sensor 15 (Center)
+        ];
+
+
+        // --- Generate Small Sample Data ---
+        const generateSampleData = () => {
+            const data = [];
+            const sensorCount = 15;
+            const duration = 180; // 3 minutes for sample
+            const interval = 12; 
+            
+            for (let time = 0; time <= duration; time += interval) {
+                const entry = { time: time, sensors: [] };
+                SENSORS_POSITIONS_CONFIG.forEach((pos, i) => {
+                    // Simulate heating from center outwards, and bottom up slightly
+                    const distFromCenter = Math.sqrt(pos.x*pos.x + pos.z*pos.z) / (OVEN_SIZE*0.4); // Normalized distance from center XZ
+                    const yFactor = (pos.y + layer_y_offset) / (2 * layer_y_offset); // 0 for bottom, 0.5 middle, 1 top
+
+                    let baseTemp = TEMP_MIN + (time / duration) * (220 - TEMP_MIN); // Sample heats to 220C
+                    baseTemp *= (1 - distFromCenter * 0.2); // Cooler near edges initially
+                    baseTemp *= (0.8 + yFactor * 0.4); // Slightly warmer at top
+
+                    const variation = (Math.sin(time * 0.05 + i * 0.6) * 8) + (i % 5 - 2) * 2 - Math.floor(i/5)*1.5;
+                    entry.sensors.push(Math.max(TEMP_MIN, Math.min(TEMP_MAX + 50, baseTemp + variation))); // Allow sample to exceed scale slightly
+                });
+                // Add placeholder values for sample data
+                entry.ovenMon = TEMP_MIN + (time / duration) * (100 - TEMP_MIN); // Simulate Oven_Mon heating
+                entry.rt1 = 22 + Math.sin(time * 0.01) * 0.5; // Simulate slight RT variation
+                entry.rt2 = 22.5 + Math.cos(time * 0.01) * 0.5; // Simulate slight RT variation
+
+                data.push(entry);
+            }
+            console.log("Generated sample data:", data);
+            document.getElementById('dataLoadStatus').textContent = "Using sample data. Load your CSV for full simulation.";
+            document.getElementById('dataTimeInterval').textContent = `Time interval: ${interval}s (sample)`;
+            document.getElementById('dataDuration').textContent = `Total duration: ${formatTime(duration)} (sample)`;
+            return data;
+        };
+        
+        // --- CSV Parsing ---
+        const parseCSVData = (csvText) => {
+            const data = [];
+            const lines = csvText.trim().split('\n');
+            if (lines.length < 2) throw new Error("CSV has no data rows.");
+
+            const headers = lines[0].split(',').map(h => h.trim());
+            
+            const sensorIndicesInCSV = [];
+            for (let i = 1; i <= 15; i++) { // CSV columns are 1-indexed
+                const idx = headers.indexOf(i.toString());
+                if (idx === -1) throw new Error(`Sensor column '${i}' not found in CSV header.`);
+                sensorIndicesInCSV.push(idx);
+            }
+            const timeColIndex = headers.indexOf("Time_(s)");
+            if (timeColIndex === -1) throw new Error("Column 'Time_(s)' not found in CSV header.");
+
+            let minTime = Infinity, maxTime = -Infinity;
+            
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const values = lines[i].split(',');
+                const time = parseFloat(values[timeColIndex]);
+                if (isNaN(time)) {
+                    console.warn(`Skipping row ${i+1} due to invalid time value.`);
+                    continue;
+                }
+                minTime = Math.min(minTime, time);
+                maxTime = Math.max(maxTime, time);
+
+                const sensorReadings = [];
+                // Sensor data array should be 0-indexed corresponding to sensor 1 to 15
+                for(let s=0; s<15; s++) {
+                    const val = parseFloat(values[sensorIndicesInCSV[s]]);
+                    sensorReadings.push(isNaN(val) ? TEMP_MIN : val);
+                }
+                
+                // Parse additional columns
+                const ovenMonIndex = headers.indexOf("Oven_Mon");
+                const rt1Index = headers.indexOf("RT1");
+                const rt2Index = headers.indexOf("RT2");
+
+                const ovenMon = ovenMonIndex !== -1 ? parseFloat(values[ovenMonIndex]) : NaN;
+                const rt1 = rt1Index !== -1 ? parseFloat(values[rt1Index]) : NaN;
+                const rt2 = rt2Index !== -1 ? parseFloat(values[rt2Index]) : NaN;
+
+                data.push({ time: time, sensors: sensorReadings, ovenMon: ovenMon, rt1: rt1, rt2: rt2 });
+            }
+            if (data.length === 0) throw new Error("No valid data entries parsed from CSV.");
+
+            const timeInterval = data.length > 1 ? data[1].time - data[0].time : 0;
+            document.getElementById('dataLoadStatus').textContent = `Loaded ${data.length} time steps.`;
+            document.getElementById('dataTimeInterval').textContent = `Time interval: ${timeInterval.toFixed(1)}s`;
+            document.getElementById('dataDuration').textContent = `Total duration: ${formatTime(maxTime)}`;
+
+            return data;
+        };
+        
+        // --- Three.js Setup ---
+        const containerEl = document.getElementById('container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+        
+        const camera = new THREE.PerspectiveCamera(50, containerEl.clientWidth / containerEl.clientHeight, 0.1, 1000);
+        // Position camera to view the front (Positive Z face) and slightly from top-right
+        camera.position.set(OVEN_SIZE * 0.8, OVEN_SIZE * 0.6, OVEN_SIZE * 1.8); 
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(containerEl.clientWidth, containerEl.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        containerEl.appendChild(renderer.domElement);
+        
+        const ambientLight = new THREE.AmbientLight(0x707070); 
+        scene.add(ambientLight);
+        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.6);
+        directionalLight1.position.set(1, 1.5, 1).normalize();
+        scene.add(directionalLight1);
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+        directionalLight2.position.set(-1, -0.5, -1).normalize();
+        scene.add(directionalLight2);
+
+
+        // --- Oven Structure ---
+        const createOvenStructure = () => {
+            const group = new THREE.Group();
+            const wallThickness = OVEN_SIZE * 0.02; // Thinner walls
+            const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.7, metalness: 0.4 });
+            const glassMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0xb0c4de, metalness: 0.1, roughness: 0.05, transmission: 0.9, transparent: true, opacity: 0.15,
+                ior: 1.4, thickness: 0.1 // Make glass more realistic
+            });
+
+            const mainBox = new THREE.BoxGeometry(OVEN_SIZE, OVEN_SIZE, OVEN_SIZE);
+            
+            // Walls (back, left, right, bottom, top)
+            const wallDefs = [
+                { size: [OVEN_SIZE, OVEN_SIZE, wallThickness], position: [0, 0, -OVEN_SIZE/2 + wallThickness/2] }, // back
+                { size: [wallThickness, OVEN_SIZE, OVEN_SIZE - wallThickness*2], position: [-OVEN_SIZE/2 + wallThickness/2, 0, 0] }, // left
+                { size: [wallThickness, OVEN_SIZE, OVEN_SIZE - wallThickness*2], position: [OVEN_SIZE/2 - wallThickness/2, 0, 0] },  // right
+                { size: [OVEN_SIZE - wallThickness*2, wallThickness, OVEN_SIZE - wallThickness*2], position: [0, -OVEN_SIZE/2 + wallThickness/2, 0] }, // bottom
+                { size: [OVEN_SIZE - wallThickness*2, wallThickness, OVEN_SIZE - wallThickness*2], position: [0, OVEN_SIZE/2 - wallThickness/2, 0] }   // top
+            ];
+            wallDefs.forEach(def => {
+                const wall = new THREE.Mesh(new THREE.BoxGeometry(...def.size), frameMaterial);
+                wall.position.set(...def.position);
+                group.add(wall);
+            });
+            
+            // Glass Door
+            const doorGeometry = new THREE.BoxGeometry(OVEN_SIZE - wallThickness*1.5, OVEN_SIZE - wallThickness*1.5, wallThickness*0.8);
+            const door = new THREE.Mesh(doorGeometry, glassMaterial);
+            door.position.set(0, 0, OVEN_SIZE/2 - (wallThickness*0.8)/2); // Position door at the front
+            group.add(door);
+
+            // Edge lines for better definition (optional, can be heavy)
+            const edges = new THREE.EdgesGeometry(mainBox);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1, opacity: 0.3, transparent: true });
+            const lineSegments = new THREE.LineSegments(edges, lineMaterial);
+            // group.add(lineSegments); // Uncomment if desired
+
+            return group;
+        };
+        const ovenMesh = createOvenStructure();
+        scene.add(ovenMesh);
+
+        // --- Sensor Visualization ---
+        const sensorsGroup = new THREE.Group();
+        const SENSOR_VIS_SIZE = OVEN_SIZE / 35; // Visual size of sensor spheres
+        SENSORS_POSITIONS_CONFIG.forEach((pos, i) => {
+            const geometry = new THREE.SphereGeometry(SENSOR_VIS_SIZE, 12, 12);
+            const material = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(pos.x, pos.y, pos.z);
+            sphere.userData.sensorIndex = i; // Store 0-14 index
+            sensorsGroup.add(sphere);
+        });
+        scene.add(sensorsGroup);
+        
+        // --- Heat Gradient Visualization (Volumetric) ---
+        const heatGradientGroup = new THREE.Group();
+        const gridDimX = 10, gridDimY = 10, gridDimZ = 10; 
+        const cubeSizeX = OVEN_SIZE / gridDimX;
+        const cubeSizeY = OVEN_SIZE / gridDimY;
+        const cubeSizeZ = OVEN_SIZE / gridDimZ;
+
+        for (let i = 0; i < gridDimX; i++) {
+            for (let j = 0; j < gridDimY; j++) {
+                for (let k = 0; k < gridDimZ; k++) {
+                    const geometry = new THREE.BoxGeometry(cubeSizeX * 0.9, cubeSizeY * 0.9, cubeSizeZ * 0.9);
+                    const material = new THREE.MeshStandardMaterial({ 
+                        transparent: true, 
+                        opacity: 0.05, 
+                        roughness: 0.9, 
+                        metalness: 0.0
+                    });
+                    const cube = new THREE.Mesh(geometry, material);
+                    cube.position.set(
+                        (i - (gridDimX - 1) / 2) * cubeSizeX,
+                        (j - (gridDimY - 1) / 2) * cubeSizeY,
+                        (k - (gridDimZ - 1) / 2) * cubeSizeZ
+                    );
+                    heatGradientGroup.add(cube);
+                }
+            }
+        }
+        scene.add(heatGradientGroup);
+        
+        // --- Oven Monitor Visualization ---
+        const ovenMonGeometry = new THREE.BoxGeometry(OVEN_SIZE * 0.1, OVEN_SIZE * 0.1, OVEN_SIZE * 0.1);
+        const ovenMonMaterial = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 });
+        const ovenMonCube = new THREE.Mesh(ovenMonGeometry, ovenMonMaterial);
+        ovenMonCube.position.set(OVEN_SIZE * 0.8, OVEN_SIZE * 0.8, 0); // Position it outside the main oven
+        scene.add(ovenMonCube);
+
+        // --- Controls & Animation State ---
+        const orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+        orbitControls.enableDamping = true;
+        orbitControls.dampingFactor = 0.05;
+        orbitControls.target.set(0, 0, 0); 
+
+        let currentTimeStep = 0;
+        let isPlaying = false; 
+        let playbackSpeed = 1.0;
+        let lastFrameTime = 0;
+        
+        // --- Helper: Map temperature to HSL color ---
+        const getTempColor = (temp) => {
+            const normalizedTemp = Math.max(0, Math.min(1, (temp - TEMP_MIN) / (TEMP_MAX - TEMP_MIN)));
+            const hue = (1 - normalizedTemp) * 0.7; 
+            const color = new THREE.Color();
+            color.setHSL(hue, 1, 0.5);
+            return color;
+        };
+
+        // --- Update Visualization ---
+        const updateVisualization = () => {
+            if (!temperatureData || temperatureData.length === 0 || !temperatureData[currentTimeStep]) {
+                 console.warn("No data or invalid timestep for visualization.");
+                 return;
+            }
+            const timeData = temperatureData[currentTimeStep];
+
+            // Update sensor spheres
+            sensorsGroup.children.forEach(sphere => {
+                const sensorIndex = sphere.userData.sensorIndex; // 0-14
+                const temp = timeData.sensors[sensorIndex]; // data for sensor (index+1)
+                const color = getTempColor(temp);
+                sphere.material.color.copy(color);
+                sphere.material.emissive.copy(color).multiplyScalar(0.5); 
+
+                const normalizedTemp = Math.max(0, Math.min(1,(temp - TEMP_MIN) / (TEMP_MAX - TEMP_MIN)));
+                const scale = 1 + normalizedTemp * 0.6; 
+                sphere.scale.set(scale, scale, scale);
+            });
+
+            // Update heat gradient cubes using Inverse Distance Weighting (IDW)
+            const idwPower = 1.8; // Lower for smoother, wider influence
+            const influenceRadius = OVEN_SIZE * 0.7; // How far sensors influence
+
+            heatGradientGroup.children.forEach(cube => {
+                let totalTemp = 0;
+                let totalWeight = 0;
+                const cubeWorldPos = new THREE.Vector3();
+                cube.getWorldPosition(cubeWorldPos);
+
+                SENSORS_POSITIONS_CONFIG.forEach((sensorConfig, sensorIdx) => {
+                    const sensorActualPos = new THREE.Vector3(sensorConfig.x, sensorConfig.y, sensorConfig.z);
+                    const distance = cubeWorldPos.distanceTo(sensorActualPos);
+
+                    if (distance < influenceRadius) {
+                        const weight = 1 / (Math.pow(distance, idwPower) + 0.01);
+                        totalTemp += timeData.sensors[sensorIdx] * weight;
+                        totalWeight += weight;
+                    }
+                });
+
+                const avgTemp = totalWeight > 0 ? totalTemp / totalWeight : TEMP_MIN;
+                const color = getTempColor(avgTemp);
+                cube.material.color.copy(color);
+                
+                const normalizedAvgTemp = Math.max(0, Math.min(1, (avgTemp - TEMP_MIN) / (TEMP_MAX - TEMP_MIN)));
+                // Opacity makes it "fluid" - hotter areas are more visible
+                cube.material.opacity = 0.02 + Math.pow(normalizedAvgTemp, 1.5) * 0.35; 
+                cube.material.emissive.copy(color).multiplyScalar(normalizedAvgTemp * 0.2);
+            });
+            
+            // Update Oven_Mon cube color
+            if (!isNaN(timeData.ovenMon)) {
+                const ovenMonColor = getTempColor(timeData.ovenMon);
+                ovenMonCube.material.color.copy(ovenMonColor);
+                ovenMonCube.material.emissive.copy(ovenMonColor).multiplyScalar(0.5);
+            } else {
+                 ovenMonCube.material.color.set(0x808080); // Grey if data is NaN
+                 ovenMonCube.material.emissive.set(0x404040);
+            }
+
+            // Update text displays
+            document.getElementById('currentTime').textContent = formatTime(timeData.time);
+            document.getElementById('timeSlider').value = currentTimeStep;
+            document.getElementById('ovenMonDisplay').textContent = `Oven Monitor (Oven_Mon): ${!isNaN(timeData.ovenMon) ? timeData.ovenMon.toFixed(2) : 'N/A'}°C`;
+            document.getElementById('rt1Display').textContent = `Room Temp 1 (RT1): ${!isNaN(timeData.rt1) ? timeData.rt1.toFixed(2) : 'N/A'}°C`;
+            document.getElementById('rt2Display').textContent = `Room Temp 2 (RT2): ${!isNaN(timeData.rt2) ? timeData.rt2.toFixed(2) : 'N/A'}°C`;
+        };
+
+        function formatTime(totalSeconds) {
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = Math.floor(totalSeconds % 60);
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // --- Animation Loop ---
+        const animate = (timestamp) => {
+            requestAnimationFrame(animate);
+            orbitControls.update();
+            
+            if (isPlaying && temperatureData.length > 0) {
+                const elapsed = timestamp - lastFrameTime;
+                if (elapsed > (1000 / (20 * playbackSpeed))) { // Target ~20 visual updates per second
+                    currentTimeStep = (currentTimeStep + 1);
+                    if (currentTimeStep >= temperatureData.length) {
+                        currentTimeStep = 0; 
+                    }
+                    updateVisualization();
+                    lastFrameTime = timestamp;
+                }
+            }
+            renderer.render(scene, camera);
+        };
+        
+        // --- Event Listeners (same as before) ---
+        document.getElementById('csvInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    temperatureData = parseCSVData(event.target.result);
+                    currentTimeStep = 0;
+                    document.getElementById('timeSlider').max = temperatureData.length > 0 ? temperatureData.length - 1 : 0;
+                    document.getElementById('timeSlider').value = 0;
+                    isPlaying = temperatureData.length > 0; 
+                    const playPauseButton = document.getElementById('playPause');
+                    playPauseButton.textContent = isPlaying ? '⏸️ Pause' : '▶️ Play';
+                    if (isPlaying) playPauseButton.classList.add('playing');
+                    else playPauseButton.classList.remove('playing');
+                    updateVisualization(); 
+                } catch (error) {
+                    console.error('Error loading CSV:', error);
+                    alert('Error loading CSV: ' + error.message);
+                    temperatureData = generateSampleData(); 
+                    document.getElementById('timeSlider').max = temperatureData.length > 0 ? temperatureData.length - 1 : 0;
+                    updateVisualization();
+                }
+            };
+            reader.readAsText(file);
+        });
+        
+        document.getElementById('playPause').addEventListener('click', () => {
+            if (temperatureData.length === 0) return;
+            isPlaying = !isPlaying;
+            const playPauseButton = document.getElementById('playPause');
+            playPauseButton.textContent = isPlaying ? '⏸️ Pause' : '▶️ Play';
+            if (isPlaying) playPauseButton.classList.add('playing');
+            else playPauseButton.classList.remove('playing');
+            if (isPlaying) lastFrameTime = performance.now(); 
+        });
+        
+        document.getElementById('restart').addEventListener('click', () => {
+            if (temperatureData.length === 0) return;
+            currentTimeStep = 0;
+            document.getElementById('timeSlider').value = 0;
+            updateVisualization();
+            if (isPlaying) lastFrameTime = performance.now();
+        });
+        
+        document.getElementById('timeSlider').addEventListener('input', (e) => {
+            if (temperatureData.length === 0) return;
+            currentTimeStep = parseInt(e.target.value);
+            updateVisualization();
+            if (isPlaying) lastFrameTime = performance.now();
+        });
+        
+        document.getElementById('speedUp').addEventListener('click', () => {
+            playbackSpeed = Math.min(8, playbackSpeed * 1.4); 
+            document.getElementById('speedDisplay').textContent = `${playbackSpeed.toFixed(1)}×`;
+        });
+        
+        document.getElementById('speedDown').addEventListener('click', () => {
+            playbackSpeed = Math.max(0.2, playbackSpeed / 1.4); 
+            document.getElementById('speedDisplay').textContent = `${playbackSpeed.toFixed(1)}×`;
+        });
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = containerEl.clientWidth / containerEl.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(containerEl.clientWidth, containerEl.clientHeight);
+        });
+        
+        // --- Initialize ---
+        temperatureData = generateSampleData(); // Start with sample data
+        document.getElementById('timeSlider').max = temperatureData.length > 0 ? temperatureData.length - 1 : 0;
+        if (temperatureData.length > 0) {
+            updateVisualization();
+        } else {
+            document.getElementById('currentTime').textContent = "--:--";
+        }
+        
+        animate(0);
+        console.log('Visualization initialized.');
+    </script>
+</body>
+</html>
