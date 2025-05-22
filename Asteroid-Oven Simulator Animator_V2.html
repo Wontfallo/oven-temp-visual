@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Asteroid Oven Simulator-Animator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a; /* Dark background */
+        }
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        .panel {
+            position: absolute;
+            background: rgba(20, 20, 20, 0.85); 
+            color: #f0f0f0; 
+            padding: 15px;
+            border-radius: 8px; 
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4); 
+            font-size: 0.875rem; 
+        }
+        #info {
+            top: 20px;
+            left: 20px;
+            max-width: 320px; 
+        }
+        #controls {
+            bottom: 20px;
+            left: 20px; 
+            transform: none; 
+            display: flex; 
+            flex-direction: column;
+            gap: 8px; 
+            align-items: stretch; 
+            padding: 12px 15px;
+            min-width: 420px; 
+            max-width: 450px;
+        }
+        #legend {
+            top: 20px;
+            right: 20px;
+            max-width: 250px; 
+            max-height: calc(100vh - 40px); 
+            overflow-y: auto; 
+        }
+        .legend-gradient {
+            height: 150px; 
+            width: 25px;  
+            background: linear-gradient(to top, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000);
+            margin: 5px auto;
+            border: 1px solid #444; 
+        }
+        .legend-labels {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 150px; 
+            font-size: 0.75rem; 
+            margin-left: 8px;
+        }
+        #legend .content {
+            display: flex;
+            align-items: center;
+        }
+        #legend::-webkit-scrollbar { width: 6px; }
+        #legend::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 3px; }
+        #legend::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+        #legend::-webkit-scrollbar-thumb:hover { background: #777; }
+
+        button, #loadDataLabel {
+            background-color: #3b82f6; 
+            border: none;
+            color: white !important;
+            padding: 8px 12px; 
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 0.875rem; 
+            margin: 0; 
+            cursor: pointer;
+            border-radius: 6px; 
+            transition: background-color 0.2s ease-in-out;
+            white-space: nowrap; 
+        }
+        button:hover, #loadDataLabel:hover {
+            background-color: #2563eb; 
+        }
+        #playPause.playing { background-color: #ef4444; }
+        #playPause.playing:hover { background-color: #dc2626; }
+        input[type="range"] {
+            width: auto; 
+            flex-grow: 1; 
+            vertical-align: middle;
+            cursor: pointer;
+        }
+        .time-display {
+            font-size: 0.9rem; 
+            font-weight: 600; 
+            min-width: 60px; 
+            text-align: center;
+            background-color: rgba(0,0,0,0.3);
+            padding: 4px 6px;
+            border-radius: 4px;
+        }
+        .panel h2 {
+            font-size: 1.125rem; 
+            font-weight: 700; 
+            margin-bottom: 0.5rem; 
+            color: #60a5fa; 
+        }
+         .panel h3 {
+            font-size: 1rem; 
+            font-weight: 600; 
+            margin-bottom: 0.25rem; 
+            text-align: center;
+            color: #60a5fa; 
+        }
+
+        #sensorReadingsContainer { margin-top: 0.5rem; font-size: 0.7rem; display: flex; flex-direction: column; gap: 2px; }
+        .sensor-layer-title { font-weight: 600; color: #60a5fa; margin-top: 0.5rem; margin-bottom: 0.125rem; }
+        .sensor-entry { display: grid; grid-template-columns: 60px 1fr 50px; gap: 5px; align-items: center; }
+        .sensor-entry span:first-child { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sensor-entry .temp-value { text-align: right; font-variant-numeric: tabular-nums; }
+        .temp-bar-bg { background-color: #333; border-radius: 3px; height: 8px; width: 100%; overflow: hidden; }
+        .temp-bar { background-color: blue; height: 100%; width: 0%; border-radius: 2px; transition: width 0.1s linear, background-color 0.1s linear; }
+
+        #dataInfoPanel { font-size: 0.75rem; color: #cccccc; }
+        #dataInfoPanel p { margin-bottom: 2px; }
+        #dataLoadStatus.loaded-success { color: #4ade80; }
+        #dataLoadStatus.loaded-error { color: #f87171; }
+        #dataLoadStatus.sample-data { color: #facc15; }
+        .controls-row { display: flex; align-items: center; gap: 8px; }
+        
+        #sensorTooltip {
+            position: absolute; display: none; background: rgba(0,0,0,0.75); color: white;
+            padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;
+            pointer-events: none; z-index: 1001; white-space: nowrap;
+        }
+        #aboutModalOverlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: rgba(0, 0, 0, 0.75); display: none; 
+            justify-content: center; align-items: center; z-index: 2000; 
+            padding: 20px; box-sizing: border-box;
+        }
+        #aboutModalContent {
+            background-color: #282828; color: #e0e0e0; padding: 25px 35px;
+            border-radius: 10px; width: 100%; max-width: 900px;
+            max-height: 90vh; overflow-y: auto; box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+            position: relative; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #aboutModalCloseButton {
+            position: absolute; top: 10px; right: 15px; font-size: 2.2rem; 
+            color: #aaa; cursor: pointer; line-height: 1; transition: color 0.2s;
+            font-weight: bold;
+        }
+        #aboutModalCloseButton:hover { color: #fff; }
+        .modal-body h1, .modal-body h2, .modal-body h3 {
+            color: #60a5fa; border-bottom: 1px solid #444; padding-bottom: 0.3em;
+            margin-top: 1.2em; margin-bottom: 0.7em;
+        }
+        .modal-body h1 { text-align: center; font-size: 1.8em; margin-top: 0.2em; }
+        .modal-body h2 { font-size: 1.5em; }
+        .modal-body h3 { font-size: 1.2em; color: #7dd3fc; border-bottom: none; }
+        .modal-body p, .modal-body li { font-size: 0.92rem; margin-bottom: 0.6em; line-height: 1.65; }
+        .modal-body ul { list-style-type: disc; margin-left: 25px; padding-left: 0; }
+        .modal-body ul ul { margin-top: 0.3em; margin-bottom: 0.3em; }
+        .modal-body code {
+            background-color: #3a3a3a; color: #f0f0f0; padding: 2px 5px;
+            border-radius: 4px; font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85em;
+        }
+        .modal-body .highlight { color: #facc15; font-weight: 600; }
+        .modal-body .button-like {
+            background-color: #3b82f6; color: white !important; padding: 2px 6px;
+            border-radius: 4px; font-size: 0.85em; display: inline-block; text-decoration: none;
+        }
+        .modal-body a { color: #93c5fd; text-decoration: none; }
+        .modal-body a:hover { text-decoration: underline; }
+        .modal-body hr { border-color: #444; margin-top: 2em; margin-bottom: 1em; }
+        #aboutModalContent::-webkit-scrollbar { width: 8px; }
+        #aboutModalContent::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; }
+        #aboutModalContent::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+        #aboutModalContent::-webkit-scrollbar-thumb:hover { background: #777; }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="info" class="panel">
+            <center><h2>Oven Temperature - Simulation & Animation</h2></center>
+            <p>Visualize a 3D Heat Map temperature distribution inside a 14-inch cubic oven.</p>
+            <p>By Gerald Jackson</p>
+            <p>Version: 1.0</p>
+            <br><p class="mt-1">Sensors: 15 (5×3 grid on central plane).</p><br/>
+            <p id="ovenMonDisplay" class="mt-2">Oven Monitor (Oven_Mon): N/A</p>
+            <p id="rt1Display" class="mt-1">Room Temp 1 (RT1): N/A</p>
+            <p id="rt2Display" class="mt-1">Room Temp 2 (RT2): N/A</p>
+        </div>
+        
+        <div id="legend" class="panel">
+            <h3>Temp (°C)</h3>
+            <div class="content">
+                <div class="legend-gradient"></div>
+                <div class="legend-labels">
+                    <span id="legendMaxTempLabel">135°</span>
+                    <span></span> 
+                    <span id="legendMidTempLabel">77.5°</span>
+                    <span></span> 
+                    <span id="legendMinTempLabel">20°</span>
+                </div>
+            </div>
+            <h3 class="mt-3 text-sm font-semibold">Sensor Readings</h3>
+            <div id="sensorReadingsContainer">
+                <div class="sensor-layer-title">Top Layer</div>
+                <div id="sensorDisplay_10" class="sensor-entry"><span>Sensor 11</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_11" class="sensor-entry"><span>Sensor 12</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_12" class="sensor-entry"><span>Sensor 13</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_13" class="sensor-entry"><span>Sensor 14</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_14" class="sensor-entry"><span>Sensor 15</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div class="sensor-layer-title">Middle Layer</div>
+                <div id="sensorDisplay_5" class="sensor-entry"><span>Sensor 6</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_6" class="sensor-entry"><span>Sensor 7</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_7" class="sensor-entry"><span>Sensor 8</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_8" class="sensor-entry"><span>Sensor 9</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_9" class="sensor-entry"><span>Sensor 10</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div class="sensor-layer-title">Bottom Layer</div>
+                <div id="sensorDisplay_0" class="sensor-entry"><span>Sensor 1</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_1" class="sensor-entry"><span>Sensor 2</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_2" class="sensor-entry"><span>Sensor 3</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_3" class="sensor-entry"><span>Sensor 4</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+                <div id="sensorDisplay_4" class="sensor-entry"><span>Sensor 5</span><div class="temp-bar-bg"><div class="temp-bar"></div></div><span class="temp-value">--.-°C</span></div>
+            </div>
+        </div>
+        
+        <div id="controls" class="panel">
+            <div id="dataInfoPanel">
+                <p id="dataLoadStatus" class="sample-data">Using sample data. Load CSV for full simulation.</p>
+                <p id="dataTimeInterval">Time interval: N/A</p>
+                <p id="dataDuration">Total duration: N/A</p>
+                <p id="dataTemperatureRange">Temperature range: N/A</p>
+            </div>
+            <div class="controls-row">
+                <input type="file" id="csvInput" accept=".csv" style="display: none;">
+                <label for="csvInput" id="loadDataLabel" title="Load custom CSV data">📂 Load CSV</label>
+                <button id="playPause" title="Play/Pause">▶️ Play</button>
+                <button id="restart" title="Restart animation">↻</button>
+                <button id="openAboutModal" title="About this Simulator" class="ml-auto">ℹ️ About</button> 
+            </div>
+            <div class="controls-row">
+                 <input type="range" id="timeSlider" min="0" max="0" value="0" title="Time scrub" style="flex-grow:3;"> 
+                 <span id="currentTime" class="time-display" style="flex-shrink:0;">00:00</span>
+                 <button id="speedDown" title="Decrease speed" style="flex-shrink:0;">-</button>
+                 <span id="speedDisplay" class="time-display" style="flex-shrink:0;">1.0×</span>
+                 <button id="speedUp" title="Increase speed" style="flex-shrink:0;">+</button>
+            </div>
+        </div>
+    </div>
+    <div id="sensorTooltip"></div>
+
+    <!-- MODAL HTML STRUCTURE -->
+    <div id="aboutModalOverlay">
+        <div id="aboutModalContent">
+            <span id="aboutModalCloseButton">&times;</span>
+            <div class="modal-body">
+                <h1>The Asteroid Oven Simulator-Animator</h1>
+                <p style="text-align: center; color: #bbb; font-size: 0.85em; margin-bottom: 1.5em;">Version: 1.0 | By Gerald Jackson</p>
+
+                <p>Welcome to <span class="highlight">The Asteroid Oven Simulator-Animator</span>! This tool provides a dynamic 3D visualization of temperature distribution within a simulated 14-inch cubic oven. It's designed to help users understand heat patterns based on sensor data, offering insights into thermal performance and heating processes.</p>
+
+                <h2>How to Run and Use</h2>
+
+                <h3>1. Initial View & Sample Data</h3>
+                <p>Upon loading, the simulator starts with <span class="highlight">sample data</span>. This allows you to immediately explore the features and see the visualization in action. The sample data simulates a heating cycle over a few minutes.</p>
+
+                <h3>2. Loading Your Own Data</h3>
+                <ul>
+                    <li>Click the <span class="button-like">📂 Load CSV</span> button located in the bottom-left control panel.</li>
+                    <li>Select a CSV (Comma Separated Values) file from your computer.</li>
+                    <li><span class="highlight">CSV File Format Requirements:</span>
+                        <ul>
+                            <li>The file <span class="highlight">must</span> include a header row.</li>
+                            <li>The header row <span class="highlight">must</span> contain a column named <code>Time_(s)</code> for time values in seconds.</li>
+                            <li>The header row <span class="highlight">must</span> contain columns named <code>1</code>, <code>2</code>, ..., <code>15</code> corresponding to the 15 temperature sensors.</li>
+                            <li>Optionally, you can include columns named <code>Oven_Mon</code>, <code>RT1</code>, and <code>RT2</code> for the oven monitor and room temperature readings. If these columns are not present, their values will be shown as 'N/A'.</li>
+                            <li>Data rows should contain numerical temperature values for each sensor at the given time. Non-numerical values will be treated as the initial minimum temperature (20°C if no other data dictates a different min).</li>
+                        </ul>
+                    </li>
+                    <li>Once loaded, the "Data Info Panel" in the controls section will update with statistics from your file, and the color legend will adjust to your data's temperature range.</li>
+                </ul>
+
+                <h3>3. Interacting with the 3D View</h3>
+                <ul>
+                    <li><span class="highlight">Orbit Controls:</span>
+                        <ul>
+                            <li><strong>Rotate:</strong> Left-click and drag.</li>
+                            <li><strong>Pan:</strong> Right-click and drag, or Middle-click and drag.</li>
+                            <li><strong>Zoom:</strong> Scroll the mouse wheel.</li>
+                        </ul>
+                    </li>
+                    <li><span class="highlight">Sensor Hover Annotations:</span> Hover your mouse cursor over any of the blue sensor spheres in the 3D view. A tooltip will appear showing the sensor number and its current temperature (e.g., "Sensor 5: 75.2°C").</li>
+                </ul>
+
+                <h3>4. Animation Controls (Bottom-Left Panel)</h3>
+                <ul>
+                    <li><span class="button-like">▶️ Play / ⏸️ Pause:</span> Start or pause the animation of temperature changes over time.</li>
+                    <li><span class="button-like">↻ Restart:</span> Reset the animation to the beginning (time 0).</li>
+                    <li><span class="highlight">Time Slider:</span> Drag the slider to manually scrub through different time steps in your data.</li>
+                    <li><span class="highlight">Current Time Display:</span> Shows the current time of the animation in <code>MM:SS</code> format.</li>
+                    <li><span class="button-like">-</span> / <span class="button-like">+</span> Buttons & Speed Display (e.g., <span class="button-like">1.0x</span>): Decrease or increase the playback speed of the animation.</li>
+                     <li><span class="button-like">ℹ️ About:</span> Opens this information modal.</li>
+                </ul>
+
+                <h3>5. Understanding the UI Panels</h3>
+                <ul>
+                    <li><strong>Info Panel (Top-Left):</strong>
+                        <ul>
+                            <li>General information about the simulator.</li>
+                            <li>Displays the current values for <code>Oven_Mon</code>, <code>RT1</code>, and <code>RT2</code> if available in your data.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Legend Panel (Top-Right):</strong>
+                        <ul>
+                            <li><strong>Temperature Gradient:</strong> Shows the color mapping from cool (blue, representing your data's minimum temperature) to hot (red, representing your data's maximum temperature).</li>
+                            <li><strong>Sensor Readings:</strong> Lists all 15 sensors, grouped by layer (Top, Middle, Bottom). Each entry shows:
+                                <ul>
+                                    <li>Sensor number (e.g., Sensor 11).</li>
+                                    <li>A dynamic temperature bar that changes length and color based on the sensor's current temperature relative to your data's min/max range.</li>
+                                    <li>The sensor's current temperature value.</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                    <li><strong>Controls Panel (Bottom-Left - Data Info Section):</strong>
+                        <ul>
+                            <li><strong>Data Load Status:</strong> Indicates if sample data is active or if a custom CSV has been loaded.</li>
+                            <li><strong>Time Interval:</strong> The time difference between consecutive data points in your dataset.</li>
+                            <li><strong>Total Duration:</strong> The total time span covered by your dataset.</li>
+                            <li><strong>Temperature Range:</strong> The minimum and maximum temperatures actually observed across all sensors in your loaded dataset. This range dictates the color scale.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h2>Features</h2>
+                <ul>
+                    <li><strong>Dynamic 3D Oven Model & Sensor Visualization.</strong></li>
+                    <li><strong>Adaptive Volumetric Heat Map:</strong> Colors and opacity scale based on the loaded data's actual temperature range.</li>
+                    <li><strong>Custom CSV Data Import & Built-in Sample Data.</strong></li>
+                    <li><strong>Full Animation Control & Interactive Sensor Tooltips.</strong></li>
+                    <li><strong>Dynamic Color Legend:</strong> The temperature scale and sensor reading bars automatically adjust to the min/max of your dataset.</li>
+                    <li><strong>Integrated "About" Modal.</strong></li>
+                </ul>
+
+                <h2>Technology Used</h2>
+                <ul>
+                    <li><strong>HTML5:</strong> For the core structure of the web page.</li>
+                    <li><strong>CSS3:</strong> For styling the user interface.
+                        <ul>
+                            <li><strong>Tailwind CSS:</strong> A utility-first CSS framework used for rapid UI development.</li>
+                        </ul>
+                    </li>
+                    <li><strong>JavaScript (ES6+):</strong> Powers all the logic, data processing, interactivity, and 3D rendering orchestration.</li>
+                    <li><strong>Three.js (r128):</strong> A powerful JavaScript library for creating and displaying animated 3D computer graphics in a web browser, using WebGL.
+                        <ul>
+                            <li><code>OrbitControls.js</code>: For intuitive 3D scene navigation.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h2>What to Look Forward To (Future Enhancements)</h2>
+                <p>The Asteroid Oven Simulator-Animator is an evolving project. Potential future enhancements include:</p>
+                <ul>
+                    <li><strong>Advanced Interpolation Methods:</strong> Exploring options like Kriging or spline-based interpolation for potentially more accurate heat map representations.</li>
+                    <li><strong>User-Configurable Sensor Layouts:</strong> Allowing users to define custom sensor positions or select from different preset configurations.</li>
+                    <li><strong>Heating Element Simulation:</strong> Ability to define virtual heating elements (position, power) and simulate their impact on temperature distribution.</li>
+                    <li><strong>Support for Different Oven Geometries:</strong> Moving beyond the cubic model to accommodate various oven shapes.</li>
+                    <li><strong>Data Export Options:</strong> Functionality to export animation frames (as images/video) or summary statistics from the simulation.</li>
+                    <li><strong>Basic Thermal Physics:</strong> Incorporating simplified models for heat conduction and convection for more realistic simulations (a significant undertaking!).</li>
+                    <li><strong>Heat Map Slicing:</strong> Tools to view 2D cross-sections (slices) of the 3D heat map at different planes.</li>
+                    <li><strong>UI Customization:</strong> Options for themes (e.g., light mode) or adjustable panel layouts.</li>
+                    <li><strong>Performance Optimizations:</strong> Further enhancements for handling extremely large datasets or more complex visualizations smoothly.</li>
+                </ul>
+
+                <hr>
+                <p style="text-align: center; font-size: 0.9em;">Thank you for using The Asteroid Oven Simulator-Animator!</p>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // Global variables for temperature data and range
+        let temperatureData = [];
+        const OVEN_SIZE = 14; 
+        // These are now initial defaults, will be overridden by data
+        let overallMinTemp = 20; 
+        let overallMaxTemp = 135; 
+
+        // Sensor positions configuration
+        const layer_y_offset = OVEN_SIZE / 3.2; 
+        const xy_plane_offset = OVEN_SIZE / 3.2; 
+
+        const SENSORS_POSITIONS_CONFIG = [
+            // Layer 1 (Bottom, Y = -layer_y_offset) - Sensors 1-5 (Indices 0-4)
+            { x: -xy_plane_offset, y: -layer_y_offset, z:  xy_plane_offset }, // Sensor 1
+            { x: -xy_plane_offset, y: -layer_y_offset, z: -xy_plane_offset }, // Sensor 2
+            { x:  xy_plane_offset, y: -layer_y_offset, z: -xy_plane_offset }, // Sensor 3
+            { x:  xy_plane_offset, y: -layer_y_offset, z:  xy_plane_offset }, // Sensor 4
+            { x:  0,               y: -layer_y_offset, z:  0               }, // Sensor 5
+
+            // Layer 2 (Middle, Y = 0) - Sensors 6-10 (Indices 5-9)
+            { x: -xy_plane_offset, y:  0,               z:  xy_plane_offset }, // Sensor 6
+            { x: -xy_plane_offset, y:  0,               z: -xy_plane_offset }, // Sensor 7
+            { x:  xy_plane_offset, y:  0,               z: -xy_plane_offset }, // Sensor 8
+            { x:  xy_plane_offset, y:  0,               z:  xy_plane_offset }, // Sensor 9
+            { x:  0,               y:  0,               z:  0               }, // Sensor 10
+
+            // Layer 3 (Top, Y = layer_y_offset) - Sensors 11-15 (Indices 10-14)
+            { x: -xy_plane_offset, y:  layer_y_offset, z:  xy_plane_offset }, // Sensor 11
+            { x: -xy_plane_offset, y:  layer_y_offset, z: -xy_plane_offset }, // Sensor 12
+            { x:  xy_plane_offset, y:  layer_y_offset, z: -xy_plane_offset }, // Sensor 13
+            { x:  xy_plane_offset, y:  layer_y_offset, z:  xy_plane_offset }, // Sensor 14
+            { x:  0,               y:  layer_y_offset, z:  0               }  // Sensor 15
+        ];
+        
+        // Function to update legend scale display based on current overallMinTemp/MaxTemp
+        function updateLegendScaleDisplay(minT, maxT) {
+            document.getElementById('legendMinTempLabel').textContent = `${minT.toFixed(1)}°`; 
+            document.getElementById('legendMidTempLabel').textContent = `${((maxT + minT) / 2).toFixed(1)}°`;
+            document.getElementById('legendMaxTempLabel').textContent = `${maxT.toFixed(1)}°`;
+        }
+
+        // Generates sample data with a heating curve
+        const generateSampleData = () => {
+            const data = [];
+            const duration = 180; // 3 minutes for sample
+            const interval = 12; // Data points every 12 seconds
+            
+            let minSampleTemp = Infinity, maxSampleTemp = -Infinity;
+            const TEMP_MIN_SAMPLE_BASE = 20; // Base for sample data generation
+            const TEMP_MAX_SAMPLE_TARGET = 220; // Target for sample data heating
+
+            for (let time = 0; time <= duration; time += interval) {
+                const entry = { time: time, sensors: [] };
+                SENSORS_POSITIONS_CONFIG.forEach((pos, i) => {
+                    // Simulate heating from center outwards, and bottom up slightly
+                    const distFromCenter = Math.sqrt(pos.x*pos.x + pos.z*pos.z) / (OVEN_SIZE*0.4); // Normalized distance from center XZ
+                    const yFactor = (pos.y + layer_y_offset) / (2 * layer_y_offset); // 0 for bottom, 0.5 middle, 1 top
+
+                    let baseTemp = TEMP_MIN_SAMPLE_BASE + (time / duration) * (TEMP_MAX_SAMPLE_TARGET - TEMP_MIN_SAMPLE_BASE); 
+                    baseTemp *= (1 - distFromCenter * 0.2); // Cooler near edges initially
+                    baseTemp *= (0.8 + yFactor * 0.4); // Slightly warmer at top
+
+                    const variation = (Math.sin(time * 0.05 + i * 0.6) * 8) + (i % 5 - 2) * 2 - Math.floor(i/5)*1.5;
+                    const currentSensorTemp = Math.max(TEMP_MIN_SAMPLE_BASE, baseTemp + variation); 
+                    entry.sensors.push(currentSensorTemp);
+                    minSampleTemp = Math.min(minSampleTemp, currentSensorTemp);
+                    maxSampleTemp = Math.max(maxSampleTemp, currentSensorTemp);
+                });
+                // Add placeholder values for sample data
+                entry.ovenMon = TEMP_MIN_SAMPLE_BASE + (time / duration) * (100 - TEMP_MIN_SAMPLE_BASE); // Simulate Oven_Mon heating
+                entry.rt1 = 22 + Math.sin(time * 0.01) * 0.5; // Simulate slight RT variation
+                entry.rt2 = 22.5 + Math.cos(time * 0.01) * 0.5; // Simulate slight RT variation
+
+                data.push(entry);
+            }
+            
+            overallMinTemp = (minSampleTemp === Infinity) ? 20 : minSampleTemp; 
+            overallMaxTemp = (maxSampleTemp === -Infinity) ? 135 : maxSampleTemp;
+            if (overallMinTemp === overallMaxTemp) overallMaxTemp += 1; // Ensure a range if all values are identical
+
+            updateLegendScaleDisplay(overallMinTemp, overallMaxTemp); // Update legend for sample data
+
+            document.getElementById('dataLoadStatus').textContent = "Using sample data. Load your CSV for full simulation.";
+            document.getElementById('dataLoadStatus').className = 'sample-data';
+            document.getElementById('dataTimeInterval').textContent = `Time interval: ${interval}s (sample)`;
+            document.getElementById('dataDuration').textContent = `Total duration: ${formatTime(duration)} (sample)`;
+            document.getElementById('dataTemperatureRange').textContent = `Temperature range: ${overallMinTemp.toFixed(1)}°C - ${overallMaxTemp.toFixed(1)}°C (sample)`;
+            
+            return data;
+        };
+        
+        // Parses CSV data from user file
+        const parseCSVData = (csvText) => {
+            const data = [];
+            const lines = csvText.trim().split('\n');
+            if (lines.length < 2) throw new Error("CSV has no data rows.");
+
+            const headers = lines[0].split(',').map(h => h.trim());
+            
+            const sensorIndicesInCSV = [];
+            for (let i = 1; i <= 15; i++) { // CSV columns are 1-indexed
+                const idx = headers.indexOf(i.toString());
+                if (idx === -1) throw new Error(`Sensor column '${i}' not found in CSV header.`);
+                sensorIndicesInCSV.push(idx);
+            }
+            const timeColIndex = headers.indexOf("Time_(s)");
+            if (timeColIndex === -1) throw new Error("Column 'Time_(s)' not found in CSV header.");
+
+            let minTime = Infinity, maxTime = -Infinity;
+            let minDataTemp = Infinity, maxDataTemp = -Infinity;
+            const defaultTempOnParseError = 20; // Fallback for unreadable sensor data
+            
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const values = lines[i].split(',');
+                const time = parseFloat(values[timeColIndex]);
+                if (isNaN(time)) {
+                    console.warn(`Skipping row ${i+1} due to invalid time value.`);
+                    continue;
+                }
+                minTime = Math.min(minTime, time);
+                maxTime = Math.max(maxTime, time);
+
+                const sensorReadings = [];
+                // Sensor data array should be 0-indexed corresponding to sensor 1 to 15
+                for(let s=0; s<15; s++) {
+                    const val = parseFloat(values[sensorIndicesInCSV[s]]);
+                    const tempToAdd = isNaN(val) ? defaultTempOnParseError : val;
+                    sensorReadings.push(tempToAdd);
+                    minDataTemp = Math.min(minDataTemp, tempToAdd);
+                    maxDataTemp = Math.max(maxDataTemp, tempToAdd);
+                }
+                
+                // Parse additional columns
+                const ovenMonIndex = headers.indexOf("Oven_Mon");
+                const rt1Index = headers.indexOf("RT1");
+                const rt2Index = headers.indexOf("RT2");
+
+                const ovenMon = ovenMonIndex !== -1 ? parseFloat(values[ovenMonIndex]) : NaN;
+                const rt1 = rt1Index !== -1 ? parseFloat(values[rt1Index]) : NaN;
+                const rt2 = rt2Index !== -1 ? parseFloat(values[rt2Index]) : NaN;
+
+                data.push({ time: time, sensors: sensorReadings, ovenMon: ovenMon, rt1: rt1, rt2: rt2 });
+            }
+            if (data.length === 0) throw new Error("No valid data entries parsed from CSV.");
+
+            overallMinTemp = (minDataTemp === Infinity) ? 20 : minDataTemp; 
+            overallMaxTemp = (maxDataTemp === -Infinity) ? 135 : maxDataTemp;
+            if (overallMinTemp === overallMaxTemp) overallMaxTemp += 1; // Ensure a non-zero range
+
+            updateLegendScaleDisplay(overallMinTemp, overallMaxTemp); // Update legend for loaded data
+
+            const timeInterval = data.length > 1 ? data[1].time - data[0].time : 0;
+            document.getElementById('dataLoadStatus').textContent = `Loaded ${data.length} time steps from CSV.`;
+            document.getElementById('dataLoadStatus').className = 'loaded-success';
+            document.getElementById('dataTimeInterval').textContent = `Time interval: ${timeInterval.toFixed(1)}s`;
+            document.getElementById('dataDuration').textContent = `Total duration: ${formatTime(maxTime)}`;
+            document.getElementById('dataTemperatureRange').textContent = `Temperature range: ${overallMinTemp.toFixed(1)}°C - ${overallMaxTemp.toFixed(1)}°C`;
+
+            return data;
+        };
+        
+        // --- Three.js Setup ---
+        const containerEl = document.getElementById('container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+        
+        const camera = new THREE.PerspectiveCamera(50, containerEl.clientWidth / containerEl.clientHeight, 0.1, 1000);
+        camera.position.set(OVEN_SIZE * 0.8, OVEN_SIZE * 0.6, OVEN_SIZE * 1.8); 
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(containerEl.clientWidth, containerEl.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        containerEl.appendChild(renderer.domElement);
+        
+        const ambientLight = new THREE.AmbientLight(0x707070); 
+        scene.add(ambientLight);
+        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.6);
+        directionalLight1.position.set(1, 1.5, 1).normalize();
+        scene.add(directionalLight1);
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+        directionalLight2.position.set(-1, -0.5, -1).normalize();
+        scene.add(directionalLight2);
+
+
+        // --- Oven Structure ---
+        const createOvenStructure = () => {
+            const group = new THREE.Group();
+            const wallThickness = OVEN_SIZE * 0.02; 
+            const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.7, metalness: 0.4 });
+            const glassMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0xb0c4de, metalness: 0.1, roughness: 0.05, transmission: 0.9, transparent: true, opacity: 0.15,
+                ior: 1.4, thickness: 0.1 
+            });
+            const metallicHardwareMaterial = new THREE.MeshStandardMaterial({ color: 0x909090, metalness: 0.85, roughness: 0.35 });
+
+            // Walls (back, left, right, bottom, top)
+            const wallDefs = [
+                { size: [OVEN_SIZE, OVEN_SIZE, wallThickness], position: [0, 0, -OVEN_SIZE/2 + wallThickness/2] }, // back
+                { size: [wallThickness, OVEN_SIZE, OVEN_SIZE - wallThickness*2], position: [-OVEN_SIZE/2 + wallThickness/2, 0, 0] }, // left
+                { size: [wallThickness, OVEN_SIZE, OVEN_SIZE - wallThickness*2], position: [OVEN_SIZE/2 - wallThickness/2, 0, 0] },  // right
+                { size: [OVEN_SIZE - wallThickness*2, wallThickness, OVEN_SIZE - wallThickness*2], position: [0, -OVEN_SIZE/2 + wallThickness/2, 0] }, // bottom
+                { size: [OVEN_SIZE - wallThickness*2, wallThickness, OVEN_SIZE - wallThickness*2], position: [0, OVEN_SIZE/2 - wallThickness/2, 0] }   // top
+            ];
+            wallDefs.forEach(def => {
+                const wall = new THREE.Mesh(new THREE.BoxGeometry(...def.size), frameMaterial);
+                wall.position.set(...def.position);
+                group.add(wall);
+            });
+            
+            // Glass Door
+            const doorGeometry = new THREE.BoxGeometry(OVEN_SIZE - wallThickness*1.5, OVEN_SIZE - wallThickness*1.5, wallThickness*0.8);
+            const door = new THREE.Mesh(doorGeometry, glassMaterial);
+            door.position.set(0, 0, OVEN_SIZE/2 - (wallThickness*0.8)/2); // Position door at the front
+            group.add(door);
+
+            // Add Latch
+            const latchRadius = OVEN_SIZE * 0.02;
+            const latchLength = OVEN_SIZE * 0.25;
+            const latchGeometry = new THREE.CylinderGeometry(latchRadius, latchRadius, latchLength, 16);
+            const latchBar = new THREE.Mesh(latchGeometry, metallicHardwareMaterial);
+            latchBar.rotation.x = Math.PI / 2; // Align length along Z-axis
+            // Position on the surface of the right wall, centered vertically, towards the front
+            latchBar.position.set(
+                OVEN_SIZE / 2 - wallThickness/2 - latchRadius, // Attach to the outer surface of the right wall
+                0, // Mid-height
+                OVEN_SIZE / 2 - latchLength / 2 - OVEN_SIZE * 0.05 // Positioned towards the front
+            );
+            group.add(latchBar);
+
+            // Add Hinges
+            const hingeRadius = OVEN_SIZE * 0.015;
+            const hingeHeight = OVEN_SIZE * 0.08;
+            const hingeGeometry = new THREE.CylinderGeometry(hingeRadius, hingeRadius, hingeHeight, 12);
+            
+            const hingeYPositions = [layer_y_offset, 0, -layer_y_offset]; // Y-coords of sensor layers
+            const hingeZOffset = OVEN_SIZE * 0.1; // How far from the very front edge
+
+            hingeYPositions.forEach(yPos => {
+                const hinge = new THREE.Mesh(hingeGeometry, metallicHardwareMaterial);
+                hinge.position.set(
+                    -OVEN_SIZE / 2 + wallThickness/2 + hingeRadius, // Attach to outer surface of left wall
+                    yPos,
+                    OVEN_SIZE / 2 - hingeHeight / 2 - hingeZOffset // Adjust Z based on hinge height and offset
+                );
+                group.add(hinge);
+            });
+
+            return group;
+        };
+        const ovenMesh = createOvenStructure();
+        scene.add(ovenMesh);
+
+        // --- Sensor Visualization ---
+        const sensorsGroup = new THREE.Group();
+        const SENSOR_VIS_SIZE = OVEN_SIZE / 35; // Visual size of sensor spheres
+        SENSORS_POSITIONS_CONFIG.forEach((pos, i) => {
+            const geometry = new THREE.SphereGeometry(SENSOR_VIS_SIZE, 12, 12);
+            const material = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(pos.x, pos.y, pos.z);
+            sphere.userData.sensorIndex = i; // Store 0-14 index
+            sensorsGroup.add(sphere);
+        });
+        scene.add(sensorsGroup);
+        
+        // --- Heat Gradient Visualization (Volumetric) ---
+        const heatGradientGroup = new THREE.Group();
+        const gridDimX = 10, gridDimY = 10, gridDimZ = 10; 
+        const cubeSizeX = OVEN_SIZE / gridDimX;
+        const cubeSizeY = OVEN_SIZE / gridDimY;
+        const cubeSizeZ = OVEN_SIZE / gridDimZ;
+
+        for (let i = 0; i < gridDimX; i++) {
+            for (let j = 0; j < gridDimY; j++) {
+                for (let k = 0; k < gridDimZ; k++) {
+                    const geometry = new THREE.BoxGeometry(cubeSizeX * 0.9, cubeSizeY * 0.9, cubeSizeZ * 0.9);
+                    const material = new THREE.MeshStandardMaterial({ 
+                        transparent: true, 
+                        opacity: 0.05, 
+                        roughness: 0.9, 
+                        metalness: 0.0
+                    });
+                    const cube = new THREE.Mesh(geometry, material);
+                    cube.position.set(
+                        (i - (gridDimX - 1) / 2) * cubeSizeX,
+                        (j - (gridDimY - 1) / 2) * cubeSizeY,
+                        (k - (gridDimZ - 1) / 2) * cubeSizeZ
+                    );
+                    heatGradientGroup.add(cube);
+                }
+            }
+        }
+        scene.add(heatGradientGroup);
+        
+        // --- Oven Monitor Visualization ---
+        const ovenMonGeometry = new THREE.BoxGeometry(OVEN_SIZE * 0.5, OVEN_SIZE * 0.5, OVEN_SIZE * 0.5);
+        const ovenMonMaterial = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 });
+        const ovenMonCube = new THREE.Mesh(ovenMonGeometry, ovenMonMaterial);
+        ovenMonCube.position.set(OVEN_SIZE * 0.80, OVEN_SIZE * -0.02, -0.5); 
+        scene.add(ovenMonCube);
+
+        // --- Controls & Animation State ---
+        const orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+        orbitControls.enableDamping = true;
+        orbitControls.dampingFactor = 0.05;
+        orbitControls.target.set(0, 0, 0); 
+
+        let currentTimeStep = 0;
+        let isPlaying = false; 
+        let playbackSpeed = 1.0;
+        let lastFrameTime = 0;
+        
+        // --- Helper: Map temperature to HSL color (adapts to overallMinTemp/MaxTemp) ---
+        const getTempColor = (temp) => {
+            let normalizedTemp;
+            const range = overallMaxTemp - overallMinTemp;
+            if (range === 0) {
+                normalizedTemp = 0.5; // If no range (all temps identical), use mid-color
+            } else {
+                normalizedTemp = Math.max(0, Math.min(1, (temp - overallMinTemp) / range));
+            }
+            const hue = (1 - normalizedTemp) * 0.7; // From blue (0.7) to red (0.0)
+            const color = new THREE.Color();
+            color.setHSL(hue, 1, 0.5);
+            return color;
+        };
+
+        // --- Update Visualization (all visual elements) ---
+        const updateVisualization = () => {
+            if (!temperatureData || temperatureData.length === 0 || !temperatureData[currentTimeStep]) {
+                 console.warn("No data or invalid timestep for visualization.");
+                 return;
+            }
+            const timeData = temperatureData[currentTimeStep];
+
+            // Update sensor spheres
+            sensorsGroup.children.forEach(sphere => {
+                const sensorIndex = sphere.userData.sensorIndex; // 0-14
+                const temp = timeData.sensors[sensorIndex]; 
+                const color = getTempColor(temp);
+                sphere.material.color.copy(color);
+                sphere.material.emissive.copy(color).multiplyScalar(0.5); 
+
+                // Scale sensor size based on temperature within the current overall range
+                let normalizedTempScale;
+                const range = overallMaxTemp - overallMinTemp;
+                if (range === 0) {
+                    normalizedTempScale = 0.5;
+                } else {
+                    normalizedTempScale = Math.max(0, Math.min(1,(temp - overallMinTemp) / range));
+                }
+                const scale = 1 + normalizedTempScale * 0.6; // Scale from 1x to 1.6x based on normalized temp
+                sphere.scale.set(scale, scale, scale);
+            });
+
+            // Update heat gradient cubes using Inverse Distance Weighting (IDW)
+            const idwPower = 1.8; 
+            const influenceRadius = OVEN_SIZE * 0.7; 
+
+            heatGradientGroup.children.forEach(cube => {
+                let totalTemp = 0;
+                let totalWeight = 0;
+                const cubeWorldPos = new THREE.Vector3();
+                cube.getWorldPosition(cubeWorldPos);
+
+                SENSORS_POSITIONS_CONFIG.forEach((sensorConfig, sensorIdx) => {
+                    const sensorActualPos = new THREE.Vector3(sensorConfig.x, sensorConfig.y, sensorConfig.z);
+                    const distance = cubeWorldPos.distanceTo(sensorActualPos);
+
+                    if (distance < influenceRadius) {
+                        const weight = 1 / (Math.pow(distance, idwPower) + 0.01);
+                        totalTemp += timeData.sensors[sensorIdx] * weight;
+                        totalWeight += weight;
+                    }
+                });
+
+                const avgTemp = totalWeight > 0 ? totalTemp / totalWeight : overallMinTemp;
+                const color = getTempColor(avgTemp);
+                cube.material.color.copy(color);
+                
+                // Opacity makes it "fluid" - hotter areas are more visible, scaled by current data range
+                let normalizedAvgTemp;
+                const range = overallMaxTemp - overallMinTemp;
+                 if (range === 0) {
+                    normalizedAvgTemp = 0.5;
+                } else {
+                    normalizedAvgTemp = Math.max(0, Math.min(1, (avgTemp - overallMinTemp) / range));
+                }
+                cube.material.opacity = 0.02 + Math.pow(normalizedAvgTemp, 1.5) * 0.35; 
+                cube.material.emissive.copy(color).multiplyScalar(normalizedAvgTemp * 0.2);
+            });
+            
+            // Update Oven_Mon cube color
+            if (!isNaN(timeData.ovenMon)) {
+                const ovenMonColor = getTempColor(timeData.ovenMon);
+                ovenMonCube.material.color.copy(ovenMonColor);
+                ovenMonCube.material.emissive.copy(ovenMonColor).multiplyScalar(0.5);
+            } else {
+                 ovenMonCube.material.color.set(0x808080); // Grey if data is NaN
+                 ovenMonCube.material.emissive.set(0x404040);
+            }
+
+            // Update text displays
+            document.getElementById('currentTime').textContent = formatTime(timeData.time);
+            document.getElementById('timeSlider').value = currentTimeStep;
+            document.getElementById('ovenMonDisplay').textContent = `Oven Monitor (Oven_Mon): ${!isNaN(timeData.ovenMon) ? timeData.ovenMon.toFixed(2) : 'N/A'}°C`;
+            document.getElementById('rt1Display').textContent = `Room Temp 1 (RT1): ${!isNaN(timeData.rt1) ? timeData.rt1.toFixed(2) : 'N/A'}°C`;
+            document.getElementById('rt2Display').textContent = `Room Temp 2 (RT2): ${!isNaN(timeData.rt2) ? timeData.rt2.toFixed(2) : 'N/A'}°C`;
+
+            // Update sensor readings panel
+            timeData.sensors.forEach((temp, sensorIdx) => { // sensorIdx is 0-14
+                const sensorDisplayId = `sensorDisplay_${sensorIdx}`;
+                const sensorEntry = document.getElementById(sensorDisplayId);
+                if (sensorEntry) {
+                    const tempValueEl = sensorEntry.querySelector('.temp-value');
+                    const tempBarEl = sensorEntry.querySelector('.temp-bar');
+
+                    tempValueEl.textContent = `${temp.toFixed(1)}°C`;
+                    
+                    // Normalize temperature for bar width and color based on overall range
+                    let normalizedTempForBar;
+                    const range = overallMaxTemp - overallMinTemp;
+                    if (range === 0) {
+                        normalizedTempForBar = 0.5;
+                    } else {
+                        normalizedTempForBar = Math.max(0, Math.min(1, (temp - overallMinTemp) / range));
+                    }
+                    tempBarEl.style.width = `${normalizedTempForBar * 100}%`;
+                    tempBarEl.style.backgroundColor = getTempColor(temp).getStyle();
+                }
+            });
+        };
+
+        function formatTime(totalSeconds) {
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = Math.floor(totalSeconds % 60);
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // --- Raycasting and Tooltip for 3D Sensors ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let intersectedSensor = null;
+        const sensorTooltipElement = document.getElementById('sensorTooltip');
+
+        function onDocumentMouseMove(event) {
+            // Calculate mouse position in normalized device coordinates (-1 to +1)
+            mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+            mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+        }
+        renderer.domElement.addEventListener('mousemove', onDocumentMouseMove, false);
+
+
+        // --- Animation Loop ---
+        const animate = (timestamp) => {
+            requestAnimationFrame(animate);
+            orbitControls.update();
+            
+            // Raycasting for sensor tooltips
+            if (temperatureData.length > 0 && temperatureData[currentTimeStep]) {
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(sensorsGroup.children);
+
+                if (intersects.length > 0) {
+                    const currentIntersect = intersects[0].object;
+                    if (intersectedSensor !== currentIntersect) {
+                        intersectedSensor = currentIntersect;
+                    }
+                    
+                    const sensorIdx = intersectedSensor.userData.sensorIndex;
+                    const temp = temperatureData[currentTimeStep].sensors[sensorIdx];
+                    sensorTooltipElement.textContent = `Sensor ${sensorIdx + 1}: ${temp.toFixed(1)}°C`;
+                    
+                    // Convert 3D position to 2D screen coordinates for tooltip placement
+                    const sensorWorldPos = new THREE.Vector3();
+                    intersectedSensor.getWorldPosition(sensorWorldPos);
+                    sensorWorldPos.project(camera); // Convert to Normalized Device Coords
+
+                    const x = (sensorWorldPos.x * 0.5 + 0.5) * renderer.domElement.clientWidth;
+                    const y = (sensorWorldPos.y * -0.5 + 0.5) * renderer.domElement.clientHeight;
+                    
+                    sensorTooltipElement.style.left = `${x + 10}px`;
+                    sensorTooltipElement.style.top = `${y - 20}px`; // Offset slightly above cursor
+                    sensorTooltipElement.style.display = 'block';
+
+                } else {
+                    if (intersectedSensor) {
+                        sensorTooltipElement.style.display = 'none';
+                    }
+                    intersectedSensor = null;
+                }
+            } else {
+                 sensorTooltipElement.style.display = 'none';
+                 intersectedSensor = null;
+            }
+
+
+            if (isPlaying && temperatureData.length > 0) {
+                const elapsed = timestamp - lastFrameTime;
+                if (elapsed > (1000 / (20 * playbackSpeed))) { // Target ~20 visual updates per second
+                    currentTimeStep = (currentTimeStep + 1);
+                    if (currentTimeStep >= temperatureData.length) {
+                        currentTimeStep = 0; // Loop animation
+                    }
+                    updateVisualization();
+                    lastFrameTime = timestamp;
+                }
+            }
+            renderer.render(scene, camera);
+        };
+        
+        // --- Event Listeners ---
+        document.getElementById('csvInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    temperatureData = parseCSVData(event.target.result);
+                    currentTimeStep = 0;
+                    document.getElementById('timeSlider').max = temperatureData.length > 0 ? temperatureData.length - 1 : 0;
+                    document.getElementById('timeSlider').value = 0;
+                    isPlaying = temperatureData.length > 0; 
+                    const playPauseButton = document.getElementById('playPause');
+                    playPauseButton.textContent = isPlaying ? '⏸️ Pause' : '▶️ Play';
+                    if (isPlaying) playPauseButton.classList.add('playing');
+                    else playPauseButton.classList.remove('playing');
+                    updateVisualization(); 
+                } catch (error) {
+                    console.error('Error loading CSV:', error);
+                    alert('Error loading CSV: ' + error.message);
+                    document.getElementById('dataLoadStatus').textContent = 'Error loading CSV. Using sample data.';
+                    document.getElementById('dataLoadStatus').className = 'loaded-error'; 
+                    temperatureData = generateSampleData(); // Revert to sample data on error
+                    document.getElementById('timeSlider').max = temperatureData.length > 0 ? temperatureData.length - 1 : 0;
+                    updateVisualization();
+                }
+            };
+            reader.readAsText(file);
+        });
+        
+        document.getElementById('playPause').addEventListener('click', () => {
+            if (temperatureData.length === 0) return;
+            isPlaying = !isPlaying;
+            const playPauseButton = document.getElementById('playPause');
+            playPauseButton.textContent = isPlaying ? '⏸️ Pause' : '▶️ Play';
+            if (isPlaying) playPauseButton.classList.add('playing');
+            else playPauseButton.classList.remove('playing');
+            if (isPlaying) lastFrameTime = performance.now(); 
+        });
+        
+        document.getElementById('restart').addEventListener('click', () => {
+            if (temperatureData.length === 0) return;
+            currentTimeStep = 0;
+            document.getElementById('timeSlider').value = 0;
+            updateVisualization();
+            if (isPlaying) lastFrameTime = performance.now();
+        });
+        
+        document.getElementById('timeSlider').addEventListener('input', (e) => {
+            if (temperatureData.length === 0) return;
+            currentTimeStep = parseInt(e.target.value);
+            updateVisualization();
+            if (isPlaying) lastFrameTime = performance.now();
+        });
+        
+        document.getElementById('speedUp').addEventListener('click', () => {
+            playbackSpeed = Math.min(8, playbackSpeed * 1.4); 
+            document.getElementById('speedDisplay').textContent = `${playbackSpeed.toFixed(1)}×`;
+        });
+        
+        document.getElementById('speedDown').addEventListener('click', () => {
+            playbackSpeed = Math.max(0.2, playbackSpeed / 1.4); 
+            document.getElementById('speedDisplay').textContent = `${playbackSpeed.toFixed(1)}×`;
+        });
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = containerEl.clientWidth / containerEl.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(containerEl.clientWidth, containerEl.clientHeight);
+        });
+        
+        // --- Initialize Function ---
+        function initializeApp() {
+            temperatureData = generateSampleData(); // Start with sample data, which now sets overallMinTemp/MaxTemp and calls updateLegendScaleDisplay
+            document.getElementById('timeSlider').max = temperatureData.length > 0 ? temperatureData.length - 1 : 0;
+            
+            // updateLegendScaleDisplay is now called within generateSampleData/parseCSVData
+            
+            if (temperatureData.length > 0) {
+                updateVisualization();
+            } else {
+                document.getElementById('currentTime').textContent = "--:--";
+            }
+
+            // --- MODAL JAVASCRIPT ---
+            const aboutModalOverlay = document.getElementById('aboutModalOverlay');
+            const openAboutModalButton = document.getElementById('openAboutModal');
+            const closeAboutModalButton = document.getElementById('aboutModalCloseButton');
+
+            if (openAboutModalButton && aboutModalOverlay && closeAboutModalButton) {
+                openAboutModalButton.addEventListener('click', () => {
+                    aboutModalOverlay.style.display = 'flex'; // Show modal
+                });
+
+                closeAboutModalButton.addEventListener('click', () => {
+                    aboutModalOverlay.style.display = 'none'; // Hide modal
+                });
+
+                // Hide modal if user clicks on the semi-transparent overlay (outside the content)
+                aboutModalOverlay.addEventListener('click', (event) => {
+                    if (event.target === aboutModalOverlay) { 
+                        aboutModalOverlay.style.display = 'none';
+                    }
+                });
+            } else {
+                console.warn("About modal elements not found. Check IDs: openAboutModal, aboutModalOverlay, aboutModalCloseButton");
+            }
+        }
+        
+        // Call initializeApp to start the application
+        initializeApp();
+        // Start the animation loop
+        animate(0);
+        console.log('Visualization initialized.');
+    </script>
+</body>
+</html>
