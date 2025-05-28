@@ -7,57 +7,67 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
+    <!-- Chart.js for 2D plotting -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
     <style>
         body {
-            margin: 0;
-            overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #1a1a1a; /* Dark background */
-        }
-        #container {
-            position: relative;
-            width: 100vw;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent scrollbars from base layout */
+            display: flex;
+            flex-direction: column;
             height: 100vh;
+        }
+        #canvasContainer {
+            flex-grow: 1; /* Allow canvas to take up remaining space */
+            position: relative; /* For absolute positioning of panels inside */
+            overflow: hidden; /* Ensure panels don't cause body scroll */
         }
         .panel {
             position: absolute;
-            background: rgba(20, 20, 20, 0.85); 
-            color: #f0f0f0; 
+            background-color: rgba(40, 40, 40, 0.85);
+            -webkit-backdrop-filter: blur(5px); /* Safari compatibility */
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(80, 80, 80, 0.7);
+            border-radius: 8px;
             padding: 15px;
-            border-radius: 8px; 
-            z-index: 100;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4); 
-            font-size: 0.875rem; 
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            color: #e0e0e0;
+            font-size: 0.8rem;
+            overflow-y: auto; /* Add scroll for panel content if it overflows */
+            max-height: 95vh; /* Prevent panels from being too tall */
         }
-        #info {
-            top: 20px;
-            left: 20px;
-            max-width: 320px; 
+        #infoPanel {
+            top: 20px; left: 20px; width: 320px;
         }
-        #controls {
-            bottom: 20px;
-            left: 20px; 
-            transform: none; 
-            display: flex; 
-            flex-direction: column;
-            gap: 8px; 
-            align-items: stretch; 
-            padding: 12px 15px;
-            min-width: 420px; 
-            max-width: 450px;
+        #plotPanel {
+            top: 20px; left: 360px; width: 400px; height: 300px;
+            resize: both; /* Make it resizable */
+            overflow: hidden; /* Hide browser's default scroll, manage canvas scroll if needed */
+            min-width: 250px; /* Optional: prevent from becoming too small */
+            min-height: 200px; /* Optional: prevent from becoming too small */
+        }
+        #plotPanel canvas {
+            width: 100% !important; /* Ensure canvas fills the panel */
+            height: 100% !important;
         }
         #legend {
-            top: 20px;
-            right: 20px;
-            max-width: 250px; 
-            max-height: calc(100vh - 40px); 
-            overflow-y: auto; 
+            top: 20px; right: 20px; width: 280px; /* Increased width */
+        }
+        #legend .content {
+            display: flex;
+            align-items: center;
+            justify-content: center; /* Center the gradient bar and labels */
+            margin-bottom: 10px; /* Add some space before sensor readings */
         }
         .legend-gradient {
             height: 150px; 
             width: 25px;  
             background: linear-gradient(to top, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000);
-            margin: 5px auto;
+            margin-right: 10px; /* Space between gradient and labels */
             border: 1px solid #444; 
         }
         .legend-labels {
@@ -66,17 +76,14 @@
             justify-content: space-between;
             height: 150px; 
             font-size: 0.75rem; 
-            margin-left: 8px;
         }
-        #legend .content {
+        #controls {
+            bottom: 20px; left: 20px; width: auto; /* Auto width based on content */
+            max-width: 700px; /* Prevent it from becoming too wide */
             display: flex;
-            align-items: center;
+            flex-direction: column;
+            gap: 10px;
         }
-        #legend::-webkit-scrollbar { width: 6px; }
-        #legend::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 3px; }
-        #legend::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
-        #legend::-webkit-scrollbar-thumb:hover { background: #777; }
-
         button, #loadDataLabel {
             background-color: #3b82f6; 
             border: none;
@@ -140,6 +147,20 @@
         #dataLoadStatus.loaded-error { color: #f87171; }
         #dataLoadStatus.sample-data { color: #facc15; }
         .controls-row { display: flex; align-items: center; gap: 8px; }
+        .wall-toggle-button {
+            padding: 6px 10px;
+            border: 1px solid #555;
+            background-color: #444;
+            color: #ddd;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+        .wall-toggle-button.active {
+            background-color: #3b82f6; /* Blue when active */
+            border-color: #3b82f6;
+            color: white;
+        }
         
         #sensorTooltip {
             position: absolute; display: none; background: rgba(0,0,0,0.75); color: white;
@@ -194,8 +215,8 @@
     </style>
 </head>
 <body>
-    <div id="container">
-        <div id="info" class="panel">
+    <div id="canvasContainer">
+        <div id="infoPanel" class="panel">
             <center><h2>Oven Temperature - Simulation & Animation</h2></center>
             <p>Visualize a 3D Heat Map temperature distribution inside a 14-inch cubic oven.</p>
             <p>By Gerald Jackson</p>
@@ -204,6 +225,11 @@
             <p id="ovenMonDisplay" class="mt-2">Oven Monitor (Oven_Mon): N/A</p>
             <p id="rt1Display" class="mt-1">Room Temp 1 (RT1): N/A</p>
             <p id="rt2Display" class="mt-1">Room Temp 2 (RT2): N/A</p>
+        </div>
+
+        <!-- New Panel for 2D Plot -->
+        <div id="plotPanel" class="panel" style="top: 20px; left: 360px; width: 400px; height: 300px;">
+            <canvas id="tempPlotCanvas"></canvas>
         </div>
         
         <div id="legend" class="panel">
@@ -262,9 +288,16 @@
                  <span id="speedDisplay" class="time-display" style="flex-shrink:0;">1.0×</span>
                  <button id="speedUp" title="Increase speed" style="flex-shrink:0;">+</button>
             </div>
+            <div class="controls-row">
+                <p class="text-sm mr-2">Wall Toggles:</p>
+                <button id="toggleBackWallBtn" class="wall-toggle-button">Back</button>
+                <button id="toggleLeftWallBtn" class="wall-toggle-button">Left</button>
+                <button id="toggleRightWallBtn" class="wall-toggle-button">Right</button>
+                <button id="toggleTopWallBtn" class="wall-toggle-button">Top</button>
+            </div>
         </div>
-    </div>
-    <div id="sensorTooltip"></div>
+        
+        <div id="sensorTooltip"></div>
 
     <!-- MODAL HTML STRUCTURE -->
     <div id="aboutModalOverlay">
@@ -450,6 +483,7 @@
 
             for (let time = 0; time <= duration; time += interval) {
                 const entry = { time: time, sensors: [] };
+                let totalSensorTempForAvg = 0;
                 SENSORS_POSITIONS_CONFIG.forEach((pos, i) => {
                     // Simulate heating from center outwards, and bottom up slightly
                     const distFromCenter = Math.sqrt(pos.x*pos.x + pos.z*pos.z) / (OVEN_SIZE*0.4); // Normalized distance from center XZ
@@ -462,9 +496,13 @@
                     const variation = (Math.sin(time * 0.05 + i * 0.6) * 8) + (i % 5 - 2) * 2 - Math.floor(i/5)*1.5;
                     const currentSensorTemp = Math.max(TEMP_MIN_SAMPLE_BASE, baseTemp + variation); 
                     entry.sensors.push(currentSensorTemp);
+                    totalSensorTempForAvg += currentSensorTemp;
                     minSampleTemp = Math.min(minSampleTemp, currentSensorTemp);
                     maxSampleTemp = Math.max(maxSampleTemp, currentSensorTemp);
                 });
+                const avgSensorTemp = entry.sensors.length > 0 ? totalSensorTempForAvg / entry.sensors.length : NaN;
+                entry.avgSensorTemp = avgSensorTemp;
+
                 // Add placeholder values for sample data
                 entry.ovenMon = TEMP_MIN_SAMPLE_BASE + (time / duration) * (100 - TEMP_MIN_SAMPLE_BASE); // Simulate Oven_Mon heating
                 entry.rt1 = 22 + Math.sin(time * 0.01) * 0.5; // Simulate slight RT variation
@@ -479,7 +517,7 @@
 
             updateLegendScaleDisplay(overallMinTemp, overallMaxTemp); // Update legend for sample data
 
-            document.getElementById('dataLoadStatus').textContent = "Using sample data. Load your CSV for full simulation.";
+            document.getElementById('dataLoadStatus').textContent = "Using sample data. Load CSV for full simulation.";
             document.getElementById('dataLoadStatus').className = 'sample-data';
             document.getElementById('dataTimeInterval').textContent = `Time interval: ${interval}s (sample)`;
             document.getElementById('dataDuration').textContent = `Total duration: ${formatTime(duration)} (sample)`;
@@ -539,7 +577,11 @@
                 const rt1 = rt1Index !== -1 ? parseFloat(values[rt1Index]) : NaN;
                 const rt2 = rt2Index !== -1 ? parseFloat(values[rt2Index]) : NaN;
 
-                data.push({ time: time, sensors: sensorReadings, ovenMon: ovenMon, rt1: rt1, rt2: rt2 });
+                // Calculate average sensor temperature for this time step
+                const totalSensorTemp = sensorReadings.reduce((sum, temp) => sum + temp, 0);
+                const avgSensorTemp = sensorReadings.length > 0 ? totalSensorTemp / sensorReadings.length : NaN;
+
+                data.push({ time: time, sensors: sensorReadings, avgSensorTemp: avgSensorTemp, ovenMon: ovenMon, rt1: rt1, rt2: rt2 }); // Add avgSensorTemp
             }
             if (data.length === 0) throw new Error("No valid data entries parsed from CSV.");
 
@@ -560,7 +602,7 @@
         };
         
         // --- Three.js Setup ---
-        const containerEl = document.getElementById('container');
+        const containerEl = document.getElementById('canvasContainer');
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a1a);
         
@@ -581,36 +623,49 @@
         directionalLight2.position.set(-1, -0.5, -1).normalize();
         scene.add(directionalLight2);
 
+        // Global variables to hold references to wall meshes
+        let backWallMesh, leftWallMesh, rightWallMesh, bottomWallMesh, topWallMesh;
 
         // --- Oven Structure ---
         const createOvenStructure = () => {
             const group = new THREE.Group();
-            const wallThickness = OVEN_SIZE * 0.02; 
+            const wallThickness = OVEN_SIZE * 0.02;
             const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.7, metalness: 0.4 });
             const glassMaterial = new THREE.MeshPhysicalMaterial({
                 color: 0xb0c4de, metalness: 0.1, roughness: 0.05, transmission: 0.9, transparent: true, opacity: 0.15,
-                ior: 1.4, thickness: 0.1 
+                ior: 1.4, thickness: 0.1
             });
             const metallicHardwareMaterial = new THREE.MeshStandardMaterial({ color: 0x909090, metalness: 0.85, roughness: 0.35 });
 
             // Walls (back, left, right, bottom, top)
             const wallDefs = [
-                { size: [OVEN_SIZE, OVEN_SIZE, wallThickness], position: [0, 0, -OVEN_SIZE/2 + wallThickness/2] }, // back
-                { size: [wallThickness, OVEN_SIZE, OVEN_SIZE - wallThickness*2], position: [-OVEN_SIZE/2 + wallThickness/2, 0, 0] }, // left
-                { size: [wallThickness, OVEN_SIZE, OVEN_SIZE - wallThickness*2], position: [OVEN_SIZE/2 - wallThickness/2, 0, 0] },  // right
-                { size: [OVEN_SIZE - wallThickness*2, wallThickness, OVEN_SIZE - wallThickness*2], position: [0, -OVEN_SIZE/2 + wallThickness/2, 0] }, // bottom
-                { size: [OVEN_SIZE - wallThickness*2, wallThickness, OVEN_SIZE - wallThickness*2], position: [0, OVEN_SIZE/2 - wallThickness/2, 0] }   // top
+                { name: 'back', size: [OVEN_SIZE, OVEN_SIZE, wallThickness], position: [0, 0, -OVEN_SIZE/2 + wallThickness/2] }, // back
+                { name: 'left', size: [wallThickness, OVEN_SIZE, OVEN_SIZE - wallThickness*2], position: [-OVEN_SIZE/2 + wallThickness/2, 0, 0] }, // left
+                { name: 'right', size: [wallThickness, OVEN_SIZE, OVEN_SIZE - wallThickness*2], position: [OVEN_SIZE/2 - wallThickness/2, 0, 0] },  // right
+                { name: 'bottom', size: [OVEN_SIZE - wallThickness*2, wallThickness, OVEN_SIZE - wallThickness*2], position: [0, -OVEN_SIZE/2 + wallThickness/2, 0] }, // bottom
+                { name: 'top', size: [OVEN_SIZE - wallThickness*2, wallThickness, OVEN_SIZE - wallThickness*2], position: [0, OVEN_SIZE/2 - wallThickness/2, 0] }   // top
             ];
-            wallDefs.forEach(def => {
-                const wall = new THREE.Mesh(new THREE.BoxGeometry(...def.size), frameMaterial);
-                wall.position.set(...def.position);
-                group.add(wall);
-            });
             
+            wallDefs.forEach(def => {
+                const wallMaterial = frameMaterial.clone(); // Create a unique material instance for each wall
+                const wall = new THREE.Mesh(new THREE.BoxGeometry(...def.size), wallMaterial);
+                wall.position.set(...def.position);
+                wall.name = `${def.name}Wall`; // Assign a name for identification
+                group.add(wall);
+
+                // Assign to global variables
+                if (def.name === 'back') backWallMesh = wall;
+                else if (def.name === 'left') leftWallMesh = wall;
+                else if (def.name === 'right') rightWallMesh = wall;
+                else if (def.name === 'bottom') bottomWallMesh = wall;
+                else if (def.name === 'top') topWallMesh = wall;
+            });
+
             // Glass Door
             const doorGeometry = new THREE.BoxGeometry(OVEN_SIZE - wallThickness*1.5, OVEN_SIZE - wallThickness*1.5, wallThickness*0.8);
-            const door = new THREE.Mesh(doorGeometry, glassMaterial);
+            const door = new THREE.Mesh(doorGeometry, glassMaterial); // Ensure 'door' is globally accessible if not already
             door.position.set(0, 0, OVEN_SIZE/2 - (wallThickness*0.8)/2); // Position door at the front
+            door.name = 'frontDoor'; // Name the front door
             group.add(door);
 
             // Add Latch
@@ -696,13 +751,13 @@
         const ovenMonGeometry = new THREE.BoxGeometry(OVEN_SIZE * 0.5, OVEN_SIZE * 0.5, OVEN_SIZE * 0.5);
         const ovenMonMaterial = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 });
         const ovenMonCube = new THREE.Mesh(ovenMonGeometry, ovenMonMaterial);
-        ovenMonCube.position.set(OVEN_SIZE * 0.80, OVEN_SIZE * -0.02, -0.5); 
+        ovenMonCube.position.set(OVEN_SIZE * 0.80, OVEN_SIZE * -0.02, -0.5);
         scene.add(ovenMonCube);
 
         // --- Controls & Animation State ---
         const orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
-        orbitControls.enableDamping = true;
-        orbitControls.dampingFactor = 0.05;
+        orbitControls.enableDamping = false; // Disable damping to prevent 'floaty' rotation
+        orbitControls.dampingFactor = 0.05; // This will now have no effect unless enableDamping is true
         orbitControls.target.set(0, 0, 0); 
 
         let currentTimeStep = 0;
@@ -829,6 +884,15 @@
                     tempBarEl.style.backgroundColor = getTempColor(temp).getStyle();
                 }
             });
+            
+            // Update Chart.js plot
+            if (tempChart && temperatureData[currentTimeStep]) {
+                const plotData = temperatureData.slice(0, currentTimeStep + 1);
+                tempChart.data.labels = plotData.map(entry => formatTime(entry.time));
+                tempChart.data.datasets[0].data = plotData.map(entry => entry.avgSensorTemp);
+                tempChart.data.datasets[1].data = plotData.map(entry => entry.ovenMon);
+                tempChart.update('none'); // 'none' for no animation, smoother for rapid updates
+            }
         };
 
         function formatTime(totalSeconds) {
@@ -849,6 +913,116 @@
             mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
         }
         renderer.domElement.addEventListener('mousemove', onDocumentMouseMove, false);
+
+        // Click event listener for the toggle cube
+        renderer.domElement.addEventListener('click', onDocumentClick, false);
+
+        function onDocumentClick(event) {
+             // Calculate mouse position in normalized device coordinates (-1 to +1)
+            mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+            mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects([toggleCube]); // Only check the toggle cube
+
+            if (intersects.length > 0) {
+                const clickedObject = intersects[0].object;
+                const faceIndex = intersects[0].faceIndex;
+
+                if (clickedObject === toggleCube && faceIndex !== undefined) {
+                    // Determine which face was clicked based on faceIndex
+                    // BoxGeometry face indices:
+                    // 0, 1: Right
+                    // 2, 3: Left
+                    // 4, 5: Top
+                    // 6, 7: Bottom
+                    // 8, 9: Front
+                    // 10, 11: Back
+
+                    let wallToToggle = null;
+                    let faceMaterialIndex = -1;
+
+                    if (faceIndex >= 0 && faceIndex <= 1) { // Right face
+                        wallToToggle = rightWallMesh;
+                        faceMaterialIndex = 0;
+                    } else if (faceIndex >= 2 && faceIndex <= 3) { // Left face
+                        wallToToggle = leftWallMesh;
+                        faceMaterialIndex = 1;
+                    } else if (faceIndex >= 4 && faceIndex <= 5) { // Top face
+                        wallToToggle = topWallMesh;
+                        faceMaterialIndex = 2;
+                    } else if (faceIndex >= 6 && faceIndex <= 7) { // Bottom face
+                        wallToToggle = bottomWallMesh;
+                        faceMaterialIndex = 3;
+                    } else if (faceIndex >= 8 && faceIndex <= 9) { // Front face
+                        wallToToggle = door; // Target the glass door mesh
+                        faceMaterialIndex = 4;
+                    } else if (faceIndex >= 10 && faceIndex <= 11) { // Back face
+                        wallToToggle = backWallMesh;
+                        faceMaterialIndex = 5;
+                    }
+
+                    if (wallToToggle && faceMaterialIndex !== -1) {
+                        toggleWallTransparency(wallToToggle);
+                        // Toggle color of the clicked face on the toggle cube
+                        const faceMaterial = toggleCubeFaceMaterials[faceMaterialIndex];
+                        if (wallToToggle.material.opacity < 1) { // Wall is transparent
+                            faceMaterial.color.set(0x3b82f6); // Active color for cube face
+                        } else { // Wall is opaque
+                            faceMaterial.color.set(0x888888); // Default color for cube face
+                        }
+                         faceMaterial.needsUpdate = true;
+                    }
+                }
+            }
+        }
+
+        // --- Add Text Labels to Toggle Cube ---
+        const fontLoader = new THREE.FontLoader();
+        fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function (font) {
+            const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const textHeight = 0.01; // Smaller text height
+            const textSize = toggleCubeSize * 0.15; // Text size relative to cube
+
+            const createTextMesh = (text, position, rotation) => {
+                const textGeometry = new THREE.TextGeometry(text, {
+                    font: font,
+                    size: textSize,
+                    height: textHeight,
+                    curveSegments: 4,
+                    bevelEnabled: false
+                });
+                textGeometry.computeBoundingBox();
+                textGeometry.computeVertexNormals();
+                const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.copy(position);
+                textMesh.rotation.copy(rotation);
+                // Center the text on the face
+                textGeometry.translate(
+                    -textGeometry.boundingBox.max.x / 2,
+                    -textGeometry.boundingBox.max.y / 2,
+                    -textGeometry.boundingBox.max.z / 2
+                );
+                toggleCube.add(textMesh);
+            };
+
+            const halfSize = toggleCubeSize / 2;
+            const textOffset = halfSize + textHeight; // Position text slightly off the face
+
+            // Right Face
+            createTextMesh('RIGHT', new THREE.Vector3(halfSize + textHeight, 0, 0), new THREE.Euler(0, Math.PI / 2, 0));
+            // Left Face
+            createTextMesh('LEFT', new THREE.Vector3(-halfSize - textHeight, 0, 0), new THREE.Euler(0, -Math.PI / 2, 0));
+            // Top Face
+            createTextMesh('TOP', new THREE.Vector3(0, halfSize + textHeight, 0), new THREE.Euler(-Math.PI / 2, 0, 0));
+            // Bottom Face
+            createTextMesh('BOTTOM', new THREE.Vector3(0, -halfSize - textHeight, 0), new THREE.Euler(Math.PI / 2, 0, 0));
+            // Front Face
+            createTextMesh('FRONT', new THREE.Vector3(0, 0, halfSize + textHeight), new THREE.Euler(0, 0, 0));
+            // Back Face
+            createTextMesh('BACK', new THREE.Vector3(0, 0, -halfSize - textHeight), new THREE.Euler(0, Math.PI, 0));
+
+        });
 
 
         // --- Animation Loop ---
@@ -926,7 +1100,71 @@
                     playPauseButton.textContent = isPlaying ? '⏸️ Pause' : '▶️ Play';
                     if (isPlaying) playPauseButton.classList.add('playing');
                     else playPauseButton.classList.remove('playing');
-                    updateVisualization(); 
+                    updateVisualization();
+                    // Re-initialize chart with new data
+                    if (tempChart) {
+                        tempChart.destroy();
+                    }
+                     const ctx = document.getElementById('tempPlotCanvas').getContext('2d');
+                     tempChart = new Chart(ctx, {
+                         type: 'line',
+                         data: {
+                             labels: temperatureData.map(entry => formatTime(entry.time)),
+                             datasets: [
+                                 {
+                                     label: 'Average Sensor Temp (°C)',
+                                     borderColor: 'rgb(75, 192, 192)',
+                                     tension: 0.1,
+                                     data: temperatureData.map(entry => entry.avgSensorTemp)
+                                 },
+                                 {
+                                     label: 'Oven Monitor (°C)',
+                                     borderColor: 'rgb(255, 99, 132)',
+                                     tension: 0.1,
+                                     data: temperatureData.map(entry => entry.ovenMon)
+                                 }
+                             ]
+                         },
+                         options: {
+                             responsive: true,
+                             maintainAspectRatio: false,
+                             scales: {
+                                 x: {
+                                     title: {
+                                         display: true,
+                                         text: 'Time',
+                                         color: '#f0f0f0'
+                                     },
+                                     ticks: {
+                                         color: '#f0f0f0'
+                                     },
+                                     grid: {
+                                         color: 'rgba(255, 255, 255, 0.1)'
+                                     }
+                                 },
+                                 y: {
+                                     title: {
+                                         display: true,
+                                         text: 'Temperature (°C)',
+                                         color: '#f0f0f0'
+                                     },
+                                     ticks: {
+                                         color: '#f0f0f0'
+                                     },
+                                      grid: {
+                                         color: 'rgba(255, 255, 255, 0.1)'
+                                     }
+                                 }
+                             },
+                             plugins: {
+                                 legend: {
+                                     labels: {
+                                         color: '#f0f0f0'
+                                     }
+                                 }
+                             }
+                         }
+                     });
                 } catch (error) {
                     console.error('Error loading CSV:', error);
                     alert('Error loading CSV: ' + error.message);
@@ -959,19 +1197,16 @@
         });
         
         document.getElementById('timeSlider').addEventListener('input', (e) => {
-            if (temperatureData.length === 0) return;
             currentTimeStep = parseInt(e.target.value);
-            updateVisualization();
-            if (isPlaying) lastFrameTime = performance.now();
+            if (!isPlaying) { // If paused, update visuals immediately
+                updateVisualization();
+            }
         });
+        
+        document.getElementById('speedDown').addEventListener('click', () => changeSpeed(-0.25));
         
         document.getElementById('speedUp').addEventListener('click', () => {
             playbackSpeed = Math.min(8, playbackSpeed * 1.4); 
-            document.getElementById('speedDisplay').textContent = `${playbackSpeed.toFixed(1)}×`;
-        });
-        
-        document.getElementById('speedDown').addEventListener('click', () => {
-            playbackSpeed = Math.max(0.2, playbackSpeed / 1.4); 
             document.getElementById('speedDisplay').textContent = `${playbackSpeed.toFixed(1)}×`;
         });
         
@@ -1019,11 +1254,97 @@
             }
         }
         
+        // Chart.js instance
+        let tempChart;
+
         // Call initializeApp to start the application
         initializeApp();
         // Start the animation loop
         animate(0);
         console.log('Visualization initialized.');
+
+        // --- 2D Plot Setup ---
+        const ctx = document.getElementById('tempPlotCanvas').getContext('2d');
+        tempChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: temperatureData.map(entry => formatTime(entry.time)),
+                datasets: [
+                    {
+                        label: 'Average Sensor Temp (°C)',
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1,
+                        data: temperatureData.map(entry => entry.avgSensorTemp)
+                    },
+                    {
+                        label: 'Oven Monitor (°C)',
+                        borderColor: 'rgb(255, 99, 132)',
+                        tension: 0.1,
+                        data: temperatureData.map(entry => entry.ovenMon)
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time',
+                            color: '#f0f0f0'
+                        },
+                        ticks: {
+                            color: '#f0f0f0'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)',
+                            color: '#f0f0f0'
+                        },
+                        ticks: {
+                            color: '#f0f0f0'
+                        },
+                         grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#f0f0f0'
+                        }
+                    }
+                }
+            }
+        });
+
+        // --- Wall Transparency Toggles ---
+        const toggleWallTransparency = (wallMesh, buttonElement) => {
+            if (!wallMesh) return;
+            wallMesh.material.transparent = true; // Always allow transparency for opacity changes
+            if (wallMesh.material.opacity > 0.5) {
+                wallMesh.material.opacity = 0.2; // Make transparent
+                buttonElement.classList.add('active');
+            } else {
+                wallMesh.material.opacity = 1.0; // Make opaque
+                buttonElement.classList.remove('active');
+            }
+            wallMesh.material.needsUpdate = true;
+        };
+
+        document.getElementById('toggleBackWallBtn').addEventListener('click', () => toggleWallTransparency(backWallMesh, document.getElementById('toggleBackWallBtn')));
+        document.getElementById('toggleLeftWallBtn').addEventListener('click', () => toggleWallTransparency(leftWallMesh, document.getElementById('toggleLeftWallBtn')));
+        document.getElementById('toggleRightWallBtn').addEventListener('click', () => toggleWallTransparency(rightWallMesh, document.getElementById('toggleRightWallBtn')));
+        document.getElementById('toggleTopWallBtn').addEventListener('click', () => toggleWallTransparency(topWallMesh, document.getElementById('toggleTopWallBtn')));
+
+        // --- CSV Data Handling & Animation Playback ---
     </script>
 </body>
 </html>
