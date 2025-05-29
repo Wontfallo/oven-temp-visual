@@ -42,6 +42,8 @@
         }
         #infoPanel {
             top: 20px; left: 20px; width: 320px;
+            resize: both; overflow: auto;
+            min-width: 250px; min-height: 150px;
         }
         #plotPanel {
             top: 20px; left: 360px; width: 400px; height: 300px;
@@ -56,6 +58,8 @@
         }
         #legend {
             top: 20px; right: 20px; width: 280px; /* Increased width */
+            resize: both; overflow: auto;
+            min-width: 200px; min-height: 200px;
         }
         #legend .content {
             display: flex;
@@ -78,8 +82,10 @@
             font-size: 0.75rem; 
         }
         #controls {
-            bottom: 20px; left: 20px; width: auto; /* Auto width based on content */
-            max-width: 700px; /* Prevent it from becoming too wide */
+            bottom: 20px; left: 20px; width: 450px; /* Fixed initial width for resizing */
+            max-width: none; /* Allow it to be resized larger than initial max-width */
+            resize: both; overflow: auto;
+            min-width: 300px; min-height: 120px;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -704,6 +710,90 @@
         };
         const ovenMesh = createOvenStructure();
         scene.add(ovenMesh);
+
+        // --- Make Panels Draggable ---
+        function makePanelDraggable(panelElement) {
+            let offsetX, offsetY, isDragging = false, originalZIndex = panelElement.style.zIndex || '100';
+
+            const startDrag = (e) => {
+                // For mouse, require Ctrl key. For touch, proceed if it's a single touch.
+                if (e.type === 'mousedown' && !e.ctrlKey) return;
+                if (e.type === 'touchstart' && e.touches.length > 1) return; // Ignore multi-touch gestures for dragging
+
+                isDragging = true;
+                const rect = panelElement.getBoundingClientRect();
+                
+                let clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+                let clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+
+                offsetX = clientX - rect.left;
+                offsetY = clientY - rect.top;
+
+                panelElement.style.cursor = 'grabbing';
+                // Bring panel to front
+                document.querySelectorAll('.panel').forEach(p => {
+                    if (p !== panelElement) p.style.zIndex = p.dataset.originalZIndex || '100'; // Reset others
+                });
+                panelElement.dataset.originalZIndex = originalZIndex; // Store its original z-index
+                panelElement.style.zIndex = '101'; // Elevate current panel
+                
+                if (e.type === 'mousedown') e.preventDefault(); // Prevent text selection for mouse
+            };
+
+            const drag = (e) => {
+                if (!isDragging) return;
+
+                // Prevent page scroll on touch devices while dragging a panel
+                if (e.type === 'touchmove') e.preventDefault(); 
+
+                let clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+                let clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+
+                let newX = clientX - offsetX;
+                let newY = clientY - offsetY;
+
+                const parentRect = panelElement.parentElement.getBoundingClientRect();
+                newX = Math.max(0, Math.min(newX, parentRect.width - panelElement.offsetWidth));
+                newY = Math.max(0, Math.min(newY, parentRect.height - panelElement.offsetHeight));
+
+                panelElement.style.left = newX + 'px';
+                panelElement.style.top = newY + 'px';
+                panelElement.style.right = 'auto'; // Ensure left/top positioning takes precedence
+                panelElement.style.bottom = 'auto';
+            };
+
+            const stopDrag = () => {
+                if (isDragging) {
+                    isDragging = false;
+                    panelElement.style.cursor = 'grab';
+                }
+            };
+
+            panelElement.addEventListener('mousedown', startDrag);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', stopDrag);
+
+            // Touch events for mobile compatibility
+            panelElement.addEventListener('touchstart', startDrag, { passive: true }); 
+            document.addEventListener('touchmove', drag, { passive: false }); 
+            document.addEventListener('touchend', stopDrag);
+            document.addEventListener('touchcancel', stopDrag);
+
+            panelElement.style.cursor = 'grab'; 
+            if (!panelElement.style.zIndex) {
+                 panelElement.style.zIndex = '100'; 
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const panelIds = ['infoPanel', 'plotPanel', 'legend', 'controls'];
+            panelIds.forEach(id => {
+                const panel = document.getElementById(id);
+                if (panel) {
+                    makePanelDraggable(panel);
+                }
+            });
+        });
 
         // --- Sensor Visualization ---
         const sensorsGroup = new THREE.Group();
